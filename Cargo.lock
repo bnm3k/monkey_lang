@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "monkey_lang"
+name = "monkey"
 version = "0.1.0"
