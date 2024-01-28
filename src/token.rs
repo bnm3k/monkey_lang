@@ -49,6 +49,7 @@ impl TryFrom<char> for TokenType {
     }
 }
 
+#[derive(Debug)]
 pub struct Token {
     pub token_type: TokenType,
     pub literal: String,

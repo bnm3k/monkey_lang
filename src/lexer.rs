@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use crate::token::{self, Token, TokenType};
 
-struct Lexer {
+pub struct Lexer {
     chars: Vec<char>,
     keywords: HashMap<String, TokenType>,
     i: usize,
 }
 
 impl Lexer {
-    fn new(input: &str) -> Self {
+    pub fn new(input: &str) -> Self {
         let mut chars = input.chars().collect::<Vec<_>>();
         chars.push(0 as char);
         Self {
