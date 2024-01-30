@@ -117,6 +117,7 @@ impl Parser {
             INT => self.parse_integer_literal(),
             BANG | MINUS => self.parse_prefix_expression(),
             TRUE | FALSE => self.parse_boolean(),
+            LPAREN => self.parse_grouped_expression(),
             _ => {
                 self.error_msgs.push(format!(
                     "no prefix parse function for {:?} found",
@@ -151,6 +152,16 @@ impl Parser {
             operator,
             right: right,
         })
+    }
+
+    fn parse_grouped_expression(&mut self) -> Option<Expression> {
+        let l_paren_token = self.tokens.pop_front().unwrap();
+        assert!(l_paren_token.token_type == TokenType::LPAREN);
+        let exp = self.parse_expression(Precedence::Lowest);
+        if self.peek_expect_or_set_err(TokenType::RPAREN) {
+            let _ = self.tokens.pop_front();
+        }
+        exp
     }
 
     fn parse_infix_expression(&mut self, left: Expression) -> Option<Expression> {
@@ -576,6 +587,11 @@ mod parser_tests {
             ("false", "false"),
             ("3 > 5 == false", "((3 > 5) == false)"),
             ("3 < 5 == true", "((3 < 5) == true)"),
+            ("1 + (2 + 3) + 4", "((1 + (2 + 3)) + 4)"),
+            ("(5 + 5) * 2", "((5 + 5) * 2)"),
+            ("2 / (5 + 5)", "(2 / (5 + 5))"),
+            ("-(5 + 5)", "(-(5 + 5))"),
+            ("!(true == true)", "(!(true == true))"),
         ];
 
         for (input, expected) in test_cases {
