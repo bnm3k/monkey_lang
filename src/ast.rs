@@ -88,6 +88,10 @@ pub enum Expression {
         token: Token,
         value: i64,
     },
+    Boolean {
+        token: Token,
+        value: bool,
+    },
     PrefixExpression {
         token: Token,
         operator: String,
@@ -110,6 +114,7 @@ impl Node for Expression {
             IntegerLiteral { token, .. } => &token.literal,
             PrefixExpression { token, .. } => &token.literal,
             InfixExpression { token, .. } => &token.literal,
+            Boolean { token, .. } => &token.literal,
         }
     }
 }
@@ -121,6 +126,7 @@ impl ToString for Expression {
             Empty => "empty".into(),
             Identifier(i) => i.to_string(),
             IntegerLiteral { token, .. } => token.literal.clone(),
+            Boolean { token, .. } => token.literal.clone(),
             PrefixExpression {
                 operator, right, ..
             } => ["(", operator, &right.to_string(), ")"]

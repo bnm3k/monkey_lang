@@ -111,11 +111,12 @@ impl Parser {
     fn parse_expression(&mut self, precedence: Precedence) -> Option<Expression> {
         let token_type = self.tokens.front().unwrap().token_type;
         use TokenType::*;
-        // handle infix
+        // handle prefix
         let mut left_expression: Expression = match token_type {
             IDENT => self.parse_identifier(),
             INT => self.parse_integer_literal(),
             BANG | MINUS => self.parse_prefix_expression(),
+            TRUE | FALSE => self.parse_boolean(),
             _ => {
                 self.error_msgs.push(format!(
                     "no prefix parse function for {:?} found",
@@ -124,7 +125,10 @@ impl Parser {
                 None
             }
         }?;
-        while !self.peek_token_is(TokenType::SEMICOLON) && precedence < self.peek_precedence() {
+
+        // handle infix
+        // if precedence >= self.peek_precedence
+        while precedence < self.peek_precedence() && !self.peek_token_is(TokenType::SEMICOLON) {
             let got = match self.tokens.front().unwrap().token_type {
                 PLUS | MINUS | SLASH | ASTERISK | EQ | NOT_EQ | LT | GT => {
                     self.parse_infix_expression(left_expression)
@@ -175,6 +179,20 @@ impl Parser {
             value,
         };
         Some(Expression::Identifier(id))
+    }
+
+    fn parse_boolean(&mut self) -> Option<Expression> {
+        let bool_token = self.tokens.pop_front().unwrap();
+        // assert handled implicitly below
+        let value = match bool_token.token_type {
+            TokenType::TRUE => true,
+            TokenType::FALSE => false,
+            _ => panic!("parse_boolean should only be called on a bool token type"),
+        };
+        Some(Expression::Boolean {
+            token: bool_token,
+            value,
+        })
     }
 
     fn parse_integer_literal(&mut self) -> Option<Expression> {
@@ -375,18 +393,39 @@ mod parser_tests {
 
         match stmt {
             Statement::ExpressionStmt { value, .. } => {
-                integer_literal_matches(value, 55).unwrap();
+                is_match_integer_literal(55, value).unwrap();
             }
             _ => panic!("Expected expression statement only"),
         }
     }
 
-    fn integer_literal_matches(expr: Expression, expect: i64) -> Result<(), &'static str> {
-        if let Expression::IntegerLiteral { value: num, .. } = expr {
-            if expect != num {
-                return Err("num values do not match");
+    #[test]
+    fn test_boolean_expression() {
+        let test_cases = [("true;", true), ("false;", false)];
+        for (input, expect) in test_cases {
+            let mut program = Parser::new(input).parse_program().unwrap();
+            assert_eq!(program.statements.len(), 1);
+            let stmt = program.statements.pop().unwrap();
+
+            let expr = match stmt {
+                Statement::ExpressionStmt { value, .. } => value,
+                _ => panic!("Expected expression statement only"),
+            };
+            match expr {
+                Expression::Boolean { value, .. } => {
+                    assert_eq!(expect, value);
+                }
+                _ => panic!("Expected boolean literal"),
             }
-            if num.to_string() != expr.token_literal() {
+        }
+    }
+
+    fn is_match_integer_literal(expect: i64, expr: Expression) -> Result<(), &'static str> {
+        if let Expression::IntegerLiteral { value: got, .. } = expr {
+            if expect != got {
+                return Err("values do not match");
+            }
+            if got.to_string() != expr.token_literal() {
                 return Err("token literal values do not match");
             }
         } else {
@@ -395,10 +434,80 @@ mod parser_tests {
         Ok(())
     }
 
+    fn is_match_bool_literal(expect: bool, expr: Expression) -> Result<(), &'static str> {
+        if let Expression::Boolean { value: got, .. } = expr {
+            if expect != got {
+                return Err("values do not match");
+            }
+            if got.to_string() != expr.token_literal() {
+                return Err("token literal values do not match");
+            }
+        } else {
+            return Err("Expected expression to be Boolean Literal");
+        }
+        Ok(())
+    }
+
+    fn is_match_identifier(expect: &str, expr: Expression) -> Result<(), &'static str> {
+        if let Expression::Identifier(identifier) = expr {
+            if identifier.value != expect {
+                return Err("values do not match");
+            }
+            if identifier.token_literal() != expect {
+                return Err("token literal values do not match");
+            }
+        } else {
+            return Err("Expected expression to be Identifier");
+        }
+        Ok(())
+    }
+
+    enum Literal<'a> {
+        IntVal(i64),
+        StrVal(&'a str),
+        BoolVal(bool),
+    }
+
+    fn is_match_literal_expression(expect: Literal, expr: Expression) -> Result<(), &'static str> {
+        use Literal::*;
+        match expect {
+            IntVal(expect) => is_match_integer_literal(expect, expr),
+            StrVal(expect) => is_match_identifier(expect, expr),
+            BoolVal(expect) => is_match_bool_literal(expect, expr),
+        }
+    }
+
+    fn is_match_infix_expression(
+        expr: Expression,
+        left: Literal,
+        operator: &str,
+        right: Literal,
+    ) -> Result<(), &'static str> {
+        let (got_left, got_operator, got_right) = match expr {
+            Expression::InfixExpression {
+                left,
+                operator,
+                right,
+                ..
+            } => (left, operator, right),
+            _ => panic!("Expect infix expression"),
+        };
+        is_match_literal_expression(left, *got_left)?;
+        assert_eq!(operator, got_operator);
+        is_match_literal_expression(right, *got_right)?;
+        Ok(())
+    }
+
     #[test]
     fn test_prefix_expressions() {
-        let test_cases = [("!5;", "!", 5), ("-15;", "-", 15)];
-        for (input, expected_operator, expected_int_value) in test_cases {
+        use Literal::*;
+        let test_cases = [
+            ("!5;", "!", IntVal(5)),
+            ("-15;", "-", IntVal(15)),
+            ("!true;", "!", BoolVal(true)),
+            ("!false;", "!", BoolVal(false)),
+        ];
+        for (input, expected_operator, expected_value) in test_cases {
             let mut program = Parser::new(input).parse_program().unwrap();
             assert_eq!(program.statements.len(), 1);
             let stmt = program.statements.pop().unwrap();
@@ -406,28 +515,32 @@ mod parser_tests {
                 Statement::ExpressionStmt { value, .. } => value,
                 _ => panic!("Expected expression statement only"),
             };
-            let (operator, int_literal_expression) = match expression {
+            let (operator, expr) = match expression {
                 Expression::PrefixExpression {
                     operator, right, ..
                 } => (operator, right),
                 _ => panic!("Expected Prefix Expression"),
             };
             assert_eq!(expected_operator, operator);
-            integer_literal_matches(*int_literal_expression, expected_int_value).unwrap();
+            is_match_literal_expression(expected_value, *expr).unwrap();
         }
     }
 
     #[test]
     fn test_infix_expressions() {
+        use Literal::*;
         let test_cases = [
-            ("5 + 5;", 5, "+", 5),
-            ("5 - 5;", 5, "-", 5),
-            ("5 * 5;", 5, "*", 5),
-            ("5 / 5;", 5, "/", 5),
-            ("5 > 5;", 5, ">", 5),
-            ("5 < 5;", 5, "<", 5),
-            ("5 == 5;", 5, "==", 5),
-            ("5 != 5;", 5, "!=", 5),
+            ("5 + 5;", IntVal(5), "+", IntVal(5)),
+            ("5 - 5;", IntVal(5), "-", IntVal(5)),
+            ("5 * 5;", IntVal(5), "*", IntVal(5)),
+            ("5 / 5;", IntVal(5), "/", IntVal(5)),
+            ("5 > 5;", IntVal(5), ">", IntVal(5)),
+            ("5 < 5;", IntVal(5), "<", IntVal(5)),
+            ("5 == 5;", IntVal(5), "==", IntVal(5)),
+            ("5 != 5;", IntVal(5), "!=", IntVal(5)),
+            ("true == true", BoolVal(true), "==", BoolVal(true)),
+            ("true != false", BoolVal(true), "!=", BoolVal(false)),
+            ("false == false", BoolVal(false), "==", BoolVal(false)),
         ];
         for (input, left, operator, right) in test_cases {
             let mut program = Parser::new(input).parse_program().unwrap();
@@ -437,18 +550,7 @@ mod parser_tests {
                 Statement::ExpressionStmt { value, .. } => value,
                 _ => panic!("Expected expression statement only"),
             };
-            let (got_left, got_operator, got_right) = match expression {
-                Expression::InfixExpression {
-                    left,
-                    operator,
-                    right,
-                    ..
-                } => (left, operator, right),
-                _ => panic!("Expected Infix Expression"),
-            };
-            assert_eq!(operator, got_operator);
-            integer_literal_matches(*got_left, left).unwrap();
-            integer_literal_matches(*got_right, right).unwrap();
+            is_match_infix_expression(expression, left, operator, right).unwrap();
         }
     }
 
@@ -470,6 +572,10 @@ mod parser_tests {
                 "3 + 4 * 5 == 3 * 1 + 4 * 5",
                 "((3 + (4 * 5)) == ((3 * 1) + (4 * 5)))",
             ),
+            ("true", "true"),
+            ("false", "false"),
+            ("3 > 5 == false", "((3 > 5) == false)"),
+            ("3 < 5 == true", "((3 < 5) == true)"),
         ];
 
         for (input, expected) in test_cases {
