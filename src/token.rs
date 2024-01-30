@@ -1,5 +1,6 @@
 #![allow(non_camel_case_types, dead_code)]
 use std::{collections::HashMap, convert::TryFrom};
+
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum TokenType {
     ILLEGAL,
