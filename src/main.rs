@@ -12,7 +12,9 @@ fn main() -> eyre::Result<()> {
                 rl.add_history_entry(line.as_str())?;
                 let parser = Parser::new(&line);
                 match parser.parse_program() {
-                    Ok(_) => {}
+                    Ok(program) => {
+                        println!("{}", program.to_string());
+                    }
                     Err(errs) => {
                         for err in errs {
                             println!("Error: {}", err);

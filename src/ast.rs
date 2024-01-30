@@ -8,15 +8,15 @@ pub enum Statement {
     LetStmt {
         token: Token, // let token
         name: Identifier,
-        value: Box<dyn Expression>,
+        value: Expression,
     },
     ReturnStmt {
         token: Token, // return token
-        value: Box<dyn Expression>,
+        value: Expression,
     },
     ExpressionStmt {
         token: Token, // first token of the expression
-        value: Box<dyn Expression>,
+        value: Expression,
     },
 }
 
@@ -56,30 +56,6 @@ impl ToString for Statement {
     }
 }
 
-pub trait Expression: Node {}
-
-pub struct PlaceholderExpression {}
-
-impl PlaceholderExpression {
-    pub fn TODO_Remove() -> Box<dyn Expression> {
-        Box::new(Self {})
-    }
-}
-
-impl Expression for PlaceholderExpression {}
-
-impl Node for PlaceholderExpression {
-    fn token_literal(&self) -> &str {
-        return "plaholder token";
-    }
-}
-
-impl ToString for PlaceholderExpression {
-    fn to_string(&self) -> String {
-        "PLACEHOLDER_VALUE".into()
-    }
-}
-
 pub struct Program {
     pub statements: Vec<Statement>,
 }
@@ -105,6 +81,71 @@ impl ToString for Program {
 }
 // Expressions
 
+pub enum Expression {
+    Empty,
+    Identifier(Identifier),
+    IntegerLiteral {
+        token: Token,
+        value: i64,
+    },
+    PrefixExpression {
+        token: Token,
+        operator: String,
+        right: Box<Expression>,
+    },
+    InfixExpression {
+        token: Token,
+        left: Box<Expression>,
+        operator: String,
+        right: Box<Expression>,
+    },
+}
+
+impl Node for Expression {
+    fn token_literal(&self) -> &str {
+        use Expression::*;
+        match self {
+            Empty => "empty",
+            Identifier(i) => i.token_literal(),
+            IntegerLiteral { token, .. } => &token.literal,
+            PrefixExpression { token, .. } => &token.literal,
+            InfixExpression { token, .. } => &token.literal,
+        }
+    }
+}
+
+impl ToString for Expression {
+    fn to_string(&self) -> String {
+        use Expression::*;
+        match self {
+            Empty => "empty".into(),
+            Identifier(i) => i.to_string(),
+            IntegerLiteral { token, .. } => token.literal.clone(),
+            PrefixExpression {
+                operator, right, ..
+            } => ["(", operator, &right.to_string(), ")"]
+                .into_iter()
+                .collect::<String>(),
+            InfixExpression {
+                left,
+                operator,
+                right,
+                ..
+            } => [
+                "(",
+                &left.to_string(),
+                " ",
+                operator,
+                " ",
+                &right.to_string(),
+                ")",
+            ]
+            .into_iter()
+            .collect::<String>(),
+        }
+    }
+}
+
 pub struct Identifier {
     pub token: token::Token, // token.IDENT token
     pub value: String,
@@ -121,5 +162,3 @@ impl ToString for Identifier {
         self.value.clone()
     }
 }
-
-impl Expression for Identifier {}
