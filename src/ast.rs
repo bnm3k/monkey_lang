@@ -133,6 +133,11 @@ pub enum Expression {
         parameters: Vec<Identifier>, // TODO consider using Identifier directly
         body: BlockStatement,
     },
+    CallExpression {
+        token: Token,
+        function: Box<Expression>,
+        arguments: Vec<Expression>,
+    },
 }
 
 impl Node for Expression {
@@ -147,6 +152,7 @@ impl Node for Expression {
             Boolean { token, .. } => &token.literal,
             IfExpression { token, .. } => &token.literal,
             FunctionLiteral { token, .. } => &token.literal,
+            CallExpression { token, .. } => &token.literal,
         }
     }
 }
@@ -209,6 +215,23 @@ impl ToString for Expression {
                         .collect::<String>(),
                     ")",
                     &body.to_string(),
+                ];
+                parts.into_iter().collect::<String>()
+            }
+            CallExpression {
+                function,
+                arguments,
+                ..
+            } => {
+                let parts = [
+                    &function.to_string(),
+                    "(",
+                    &arguments
+                        .into_iter()
+                        .map(|v| v.to_string())
+                        .intersperse(String::from(", "))
+                        .collect::<String>(),
+                    ")",
                 ];
                 parts.into_iter().collect::<String>()
             }

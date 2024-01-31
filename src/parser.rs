@@ -35,6 +35,7 @@ fn token_type_precedence(t: &Token) -> Option<Precedence> {
         MINUS => Sum,
         SLASH => Product,
         ASTERISK => Product,
+        LPAREN => Call,
         _ => return None,
     };
     Some(p)
@@ -133,11 +134,46 @@ impl Parser {
                 PLUS | MINUS | SLASH | ASTERISK | EQ | NOT_EQ | LT | GT => {
                     self.parse_infix_expression(left_expression)
                 }
+                LPAREN => self.parse_call_expression(left_expression),
                 _ => return Some(left_expression),
             };
             left_expression = got.unwrap()
         }
         Some(left_expression)
+    }
+
+    fn parse_call_expression(&mut self, function: Expression) -> Option<Expression> {
+        let lparen_token = self.tokens.pop_front().unwrap();
+        assert_eq!(TokenType::LPAREN, lparen_token.token_type);
+        let arguments = self.parse_call_arguments()?;
+        Some(Expression::CallExpression {
+            token: lparen_token,
+            function: Box::new(function),
+            arguments,
+        })
+    }
+
+    fn parse_call_arguments(&mut self) -> Option<Vec<Expression>> {
+        let mut arguments = Vec::new();
+        // handle empty argument list
+        if self.peek_token_is(TokenType::RPAREN) {
+            let _ = self.tokens.pop_front();
+            return Some(arguments);
+        }
+        // handle first arg
+        let first_arg = self.parse_expression(Precedence::Lowest)?;
+        arguments.push(first_arg);
+        while self.peek_token_is(TokenType::COMMA) {
+            let _ = self.tokens.pop_front();
+            let arg = self.parse_expression(Precedence::Lowest)?;
+            arguments.push(arg);
+        }
+        if !self.peek_expect_or_set_err(TokenType::RPAREN) {
+            return None;
+        } else {
+            let _ = self.tokens.pop_front();
+        }
+        Some(arguments)
     }
 
     fn parse_prefix_expression(&mut self) -> Option<Expression> {
@@ -529,7 +565,7 @@ mod parser_tests {
         let stmt = program.statements.pop().unwrap();
 
         match stmt {
-            Statement::ExpressionStmt { value, .. } => {
+            Statement::ExpressionStmt { ref value, .. } => {
                 is_match_integer_literal(55, value).unwrap();
             }
             _ => panic!("Expected expression statement only"),
@@ -557,9 +593,9 @@ mod parser_tests {
         }
     }
 
-    fn is_match_integer_literal(expect: i64, expr: Expression) -> Result<(), &'static str> {
+    fn is_match_integer_literal(expect: i64, expr: &Expression) -> Result<(), &'static str> {
         if let Expression::IntegerLiteral { value: got, .. } = expr {
-            if expect != got {
+            if expect != *got {
                 return Err("values do not match");
             }
             if got.to_string() != expr.token_literal() {
@@ -571,9 +607,9 @@ mod parser_tests {
         Ok(())
     }
 
-    fn is_match_bool_literal(expect: bool, expr: Expression) -> Result<(), &'static str> {
+    fn is_match_bool_literal(expect: bool, expr: &Expression) -> Result<(), &'static str> {
         if let Expression::Boolean { value: got, .. } = expr {
-            if expect != got {
+            if expect != *got {
                 return Err("values do not match");
             }
             if got.to_string() != expr.token_literal() {
@@ -585,7 +621,7 @@ mod parser_tests {
         Ok(())
     }
 
-    fn is_match_identifier(expect: &str, expr: Expression) -> Result<(), &'static str> {
+    fn is_match_identifier(expect: &str, expr: &Expression) -> Result<(), &'static str> {
         if let Expression::Identifier(identifier) = expr {
             if identifier.value != expect {
                 return Err("values do not match");
@@ -605,7 +641,7 @@ mod parser_tests {
         BoolVal(bool),
     }
 
-    fn is_match_literal_expression(expect: Literal, expr: Expression) -> Result<(), &'static str> {
+    fn is_match_literal_expression(expect: Literal, expr: &Expression) -> Result<(), &'static str> {
         use Literal::*;
         match expect {
             IntVal(expect) => is_match_integer_literal(expect, expr),
@@ -615,7 +651,7 @@ mod parser_tests {
     }
 
     fn is_match_infix_expression(
-        expr: Expression,
+        expr: &Expression,
         left: Literal,
         operator: &str,
         right: Literal,
@@ -629,9 +665,9 @@ mod parser_tests {
             } => (left, operator, right),
             _ => panic!("Expect infix expression"),
         };
-        is_match_literal_expression(left, *got_left)?;
+        is_match_literal_expression(left, got_left)?;
         assert_eq!(operator, got_operator);
-        is_match_literal_expression(right, *got_right)?;
+        is_match_literal_expression(right, got_right)?;
         Ok(())
     }
 
@@ -659,7 +695,7 @@ mod parser_tests {
                 _ => panic!("Expected Prefix Expression"),
             };
             assert_eq!(expected_operator, operator);
-            is_match_literal_expression(expected_value, *expr).unwrap();
+            is_match_literal_expression(expected_value, &expr).unwrap();
         }
     }
 
@@ -687,7 +723,7 @@ mod parser_tests {
                 Statement::ExpressionStmt { value, .. } => value,
                 _ => panic!("Expected expression statement only"),
             };
-            is_match_infix_expression(expression, left, operator, right).unwrap();
+            is_match_infix_expression(&expression, left, operator, right).unwrap();
         }
     }
 
@@ -718,6 +754,15 @@ mod parser_tests {
             ("2 / (5 + 5)", "(2 / (5 + 5))"),
             ("-(5 + 5)", "(-(5 + 5))"),
             ("!(true == true)", "(!(true == true))"),
+            ("a + add(b * c) + d", "((a + add((b * c))) + d)"),
+            (
+                "add(a, b, 1, 2 * 3, 4 + 5, add(6, 7 * 8))",
+                "add(a, b, 1, (2 * 3), (4 + 5), add(6, (7 * 8)))",
+            ),
+            (
+                "add(a + b + c * d / f + g)",
+                "add((((a + b) + ((c * d) / f)) + g))",
+            ),
         ];
 
         for (input, expected) in test_cases {
@@ -755,7 +800,7 @@ mod parser_tests {
                 assert!(body.statements.len() == 1);
                 match body.statements.pop().unwrap() {
                     Statement::ExpressionStmt { value: expr, .. } => {
-                        is_match_infix_expression(expr, StrVal("x"), "+", StrVal("y")).unwrap();
+                        is_match_infix_expression(&expr, StrVal("x"), "+", StrVal("y")).unwrap();
                     }
                     _ => panic!("Expected statement to be ExpressionStmt"),
                 };
@@ -794,6 +839,41 @@ mod parser_tests {
     }
 
     #[test]
+    fn test_call_expression_parsing() {
+        let input = "add(1, 2 * 3, 4 + 5);";
+        let mut program = Parser::new(input).parse_program().unwrap();
+        assert!(program.statements.len() == 1);
+        // outer statement should be an expression statement
+        // retrieve expression from statement
+        let stmt = program.statements.pop().unwrap();
+        let expr = match stmt {
+            Statement::ExpressionStmt { value, .. } => value,
+            _ => panic!("statement is not an ExpressionStatement"),
+        };
+
+        // the expression should be an if expession
+        match expr {
+            Expression::CallExpression {
+                function,
+                arguments,
+                ..
+            } => {
+                match *function {
+                    Expression::Identifier(ident) => {
+                        assert_eq!(ident.value, "add");
+                    }
+                    _ => panic!("Expected function in call expression to be identifier"),
+                };
+                use Literal::IntVal;
+                is_match_literal_expression(IntVal(1), &arguments[0]).unwrap();
+                is_match_infix_expression(&arguments[1], IntVal(2), "*", IntVal(3)).unwrap();
+                is_match_infix_expression(&arguments[2], IntVal(4), "+", IntVal(5)).unwrap();
+            }
+            _ => panic!("expression should be an CallExpression"),
+        };
+    }
+
+    #[test]
     fn test_if_expression() {
         let input = "if (x < y) { x }";
         let mut program = Parser::new(input).parse_program().unwrap();
@@ -815,11 +895,13 @@ mod parser_tests {
                 ..
             } => {
                 use Literal::StrVal;
-                is_match_infix_expression(*condition, StrVal("x"), "<", StrVal("y")).unwrap();
+                is_match_infix_expression(&condition, StrVal("x"), "<", StrVal("y")).unwrap();
                 assert!(consequence.statements.len() == 1);
 
                 match consequence.statements.pop().unwrap() {
-                    Statement::ExpressionStmt { value: expr, .. } => {
+                    Statement::ExpressionStmt {
+                        value: ref expr, ..
+                    } => {
                         is_match_identifier("x", expr).unwrap();
                     }
                     _ => panic!("Expected statement to be ExpressionStmt"),
@@ -854,14 +936,14 @@ mod parser_tests {
             } => {
                 use Literal::StrVal;
                 // condition
-                is_match_infix_expression(*condition, StrVal("x"), "<", StrVal("y")).unwrap();
+                is_match_infix_expression(&condition, StrVal("x"), "<", StrVal("y")).unwrap();
 
                 // check if branch
                 assert!(consequence.statements.len() == 1);
 
                 match consequence.statements.pop().unwrap() {
                     Statement::ExpressionStmt { value: expr, .. } => {
-                        is_match_identifier("x", expr).unwrap();
+                        is_match_identifier("x", &expr).unwrap();
                     }
                     _ => panic!("Expected statement to be ExpressionStmt"),
                 };
@@ -871,7 +953,7 @@ mod parser_tests {
                 assert!(alternative.statements.len() == 1);
                 match alternative.statements.pop().unwrap() {
                     Statement::ExpressionStmt { value: expr, .. } => {
-                        is_match_identifier("y", expr).unwrap();
+                        is_match_identifier("y", &expr).unwrap();
                     }
                     _ => panic!("Expected statement to be ExpressionStmt"),
                 };
