@@ -20,6 +20,26 @@ pub enum Statement {
     },
 }
 
+pub struct BlockStatement {
+    pub token: Token,
+    pub statements: Vec<Statement>,
+}
+
+impl Node for BlockStatement {
+    fn token_literal(&self) -> &str {
+        &self.token.literal
+    }
+}
+
+impl ToString for BlockStatement {
+    fn to_string(&self) -> String {
+        self.statements
+            .iter()
+            .map(|v| v.to_string())
+            .collect::<String>()
+    }
+}
+
 impl Node for Statement {
     fn token_literal(&self) -> &str {
         use Statement::*;
@@ -35,23 +55,22 @@ impl ToString for Statement {
     fn to_string(&self) -> String {
         use Statement::*;
         match self {
-            LetStmt { token, name, value } => {
-                let mut out = String::new();
-                out.push_str(self.token_literal()); // let
-                out.push(' ');
+            LetStmt { name, value, .. } => {
+                let mut out = String::from("let ");
                 out.push_str(&name.to_string()); // identifier
                 out.push_str(" = ");
                 out.push_str(&value.to_string());
                 out
             }
-            ReturnStmt { token, value } => {
-                let mut out = String::new();
-                out.push_str(self.token_literal());
-                out.push(' ');
+            ReturnStmt { value, .. } => {
+                let mut out = String::from("return ");
                 out.push_str(&value.to_string());
                 out
             }
-            ExpressionStmt { value, .. } => value.to_string(),
+            ExpressionStmt { value, .. } => {
+                println!("here bozo 3");
+                value.to_string()
+            }
         }
     }
 }
@@ -103,6 +122,17 @@ pub enum Expression {
         operator: String,
         right: Box<Expression>,
     },
+    IfExpression {
+        token: Token, // the 'if' token
+        condition: Box<Expression>,
+        consequence: BlockStatement,
+        alternative: Option<BlockStatement>,
+    },
+    FunctionLiteral {
+        token: Token,
+        parameters: Vec<Identifier>, // TODO consider using Identifier directly
+        body: BlockStatement,
+    },
 }
 
 impl Node for Expression {
@@ -115,6 +145,8 @@ impl Node for Expression {
             PrefixExpression { token, .. } => &token.literal,
             InfixExpression { token, .. } => &token.literal,
             Boolean { token, .. } => &token.literal,
+            IfExpression { token, .. } => &token.literal,
+            FunctionLiteral { token, .. } => &token.literal,
         }
     }
 }
@@ -137,17 +169,49 @@ impl ToString for Expression {
                 operator,
                 right,
                 ..
-            } => [
-                "(",
-                &left.to_string(),
-                " ",
-                operator,
-                " ",
-                &right.to_string(),
-                ")",
-            ]
-            .into_iter()
-            .collect::<String>(),
+            } => {
+                let parts = [
+                    "(",
+                    &left.to_string(),
+                    " ",
+                    operator,
+                    " ",
+                    &right.to_string(),
+                    ")",
+                ];
+                parts.into_iter().collect::<String>()
+            }
+            IfExpression {
+                condition,
+                consequence,
+                alternative,
+                ..
+            } => {
+                let mut out = ["if", &condition.to_string(), " ", &consequence.to_string()]
+                    .into_iter()
+                    .collect::<String>();
+                if let Some(alternative) = alternative {
+                    out.push_str("else");
+                    out.push_str(&alternative.to_string());
+                }
+                out
+            }
+            FunctionLiteral {
+                parameters, body, ..
+            } => {
+                let parts = [
+                    "fn",
+                    "(",
+                    &parameters
+                        .into_iter()
+                        .map(|v| v.to_string())
+                        .intersperse(String::from(","))
+                        .collect::<String>(),
+                    ")",
+                    &body.to_string(),
+                ];
+                parts.into_iter().collect::<String>()
+            }
         }
     }
 }

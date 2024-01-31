@@ -1,14 +1,11 @@
 use std::collections::VecDeque;
 
-use crate::ast::{Expression, Identifier, Node, Program, Statement};
+use crate::ast::{BlockStatement, Expression, Identifier, Node, Program, Statement};
 use crate::{
     ast,
     lexer::Lexer,
     token::{Token, TokenType},
 };
-
-type PrefixParseFn = dyn Fn() -> Expression;
-type InfixParseFn = dyn Fn(Expression) -> Expression;
 
 pub struct Parser {
     tokens: VecDeque<Token>,
@@ -118,6 +115,8 @@ impl Parser {
             BANG | MINUS => self.parse_prefix_expression(),
             TRUE | FALSE => self.parse_boolean(),
             LPAREN => self.parse_grouped_expression(),
+            FUNCTION => self.parse_function_literal(),
+            IF => self.parse_if_expression(),
             _ => {
                 self.error_msgs.push(format!(
                     "no prefix parse function for {:?} found",
@@ -150,7 +149,105 @@ impl Parser {
         Some(Expression::PrefixExpression {
             token: operator_token,
             operator,
-            right: right,
+            right,
+        })
+    }
+
+    fn parse_function_literal(&mut self) -> Option<Expression> {
+        // fn token
+        let fn_token = self.tokens.pop_front().unwrap();
+        assert!(fn_token.token_type == TokenType::FUNCTION);
+        let parameters = self.parse_function_parameters()?;
+        let body = self.parse_block_statement()?;
+        Some(Expression::FunctionLiteral {
+            token: fn_token,
+            parameters,
+            body,
+        })
+    }
+
+    fn parse_function_parameters(&mut self) -> Option<Vec<Identifier>> {
+        // lparen
+        if !self.peek_expect_or_set_err(TokenType::LPAREN) {
+            return None;
+        }
+        let _ = self.tokens.pop_front().unwrap();
+
+        let mut identifiers = Vec::new();
+
+        // handle empty function params
+        if self.peek_token_is(TokenType::RPAREN) {
+            let _ = self.tokens.pop_front().unwrap();
+            return Some(identifiers);
+        }
+
+        // helper function
+        let get_identifier = |p: &mut Parser| {
+            if !p.peek_expect_or_set_err(TokenType::IDENT) {
+                return None;
+            }
+            let ident_token = p.tokens.pop_front().unwrap();
+            let value = ident_token.literal.clone();
+            Some(Identifier {
+                token: ident_token,
+                value,
+            })
+        };
+
+        // handle first arg
+        identifiers.push(get_identifier(self)?);
+
+        // handle rest of args
+        loop {
+            if !self.peek_token_is(TokenType::COMMA) {
+                break;
+            }
+            let _ = self.tokens.pop_front();
+            identifiers.push(get_identifier(self)?);
+        }
+
+        if self.peek_token_is(TokenType::RPAREN) {
+            let _ = self.tokens.pop_front().unwrap();
+            return Some(identifiers);
+        };
+        Some(identifiers)
+    }
+
+    fn parse_if_expression(&mut self) -> Option<Expression> {
+        // if token
+        let if_token = self.tokens.pop_front().unwrap();
+        assert!(if_token.token_type == TokenType::IF);
+
+        // lparen token
+        if !self.peek_expect_or_set_err(TokenType::LPAREN) {
+            return None;
+        }
+        let _ = self.tokens.pop_front();
+
+        // condition
+        let condition = self.parse_expression(Precedence::Lowest).unwrap();
+
+        // rparen token
+        if !self.peek_expect_or_set_err(TokenType::RPAREN) {
+            return None;
+        }
+        let _ = self.tokens.pop_front();
+
+        let consequence = self.parse_block_statement()?;
+
+        let alternative = if self.peek_token_is(TokenType::ELSE) {
+            let _ = self.tokens.pop_front();
+            let block = self.parse_block_statement()?;
+            Some(block)
+        } else {
+            None
+        };
+
+        Some(Expression::IfExpression {
+            token: if_token,
+            condition: Box::new(condition),
+            consequence,
+            alternative,
         })
     }
 
@@ -176,8 +273,8 @@ impl Parser {
         Some(Expression::InfixExpression {
             token: operator_token,
             left: Box::new(left),
-            operator: operator,
-            right: right,
+            operator,
+            right,
         })
     }
 
@@ -298,6 +395,35 @@ impl Parser {
             token: let_token,
             name: identifier,
             value: Expression::Empty,
+        })
+    }
+    fn parse_block_statement(&mut self) -> Option<BlockStatement> {
+        // lbrace
+        if !self.peek_expect_or_set_err(TokenType::LBRACE) {
+            return None;
+        }
+        let lbrace_token = self.tokens.pop_front().unwrap();
+
+        let mut statements = Vec::new();
+        use TokenType::{EOF, RBRACE};
+        loop {
+            if self.peek_token_is(EOF) {
+                self.error_msgs
+                    .push("Unexpected end of block statement while parsing".into());
+                return None;
+            }
+            // rbrace
+            if self.peek_token_is(RBRACE) {
+                let _ = self.tokens.pop_front();
+                break;
+            }
+            let statement = self.parse_statement()?;
+            statements.push(statement);
+        }
+
+        Some(BlockStatement {
+            token: lbrace_token,
+            statements,
         })
     }
 
@@ -599,5 +725,158 @@ mod parser_tests {
             let actual = program.to_string();
             assert_eq!(expected, actual);
         }
+    }
+
+    #[test]
+    fn test_function_literal_parsing() {
+        let input = "fn(x, y) { x + y; }";
+        let mut program = Parser::new(input).parse_program().unwrap();
+        assert!(program.statements.len() == 1);
+        // outer statement should be an expression statement
+        // retrieve expression from statement
+        let stmt = program.statements.pop().unwrap();
+        let expr = match stmt {
+            Statement::ExpressionStmt { value, .. } => value,
+            _ => panic!("statement is not an ExpressionStatement"),
+        };
+
+        // the expression should be an if expession
+        match expr {
+            Expression::FunctionLiteral {
+                parameters,
+                mut body,
+                ..
+            } => {
+                use Literal::StrVal;
+                assert!(parameters.len() == 2);
+                let params = parameters.into_iter().map(|v| v.value).collect::<Vec<_>>();
+                assert_eq!(params, ["x", "y"]);
+
+                assert!(body.statements.len() == 1);
+                match body.statements.pop().unwrap() {
+                    Statement::ExpressionStmt { value: expr, .. } => {
+                        is_match_infix_expression(expr, StrVal("x"), "+", StrVal("y")).unwrap();
+                    }
+                    _ => panic!("Expected statement to be ExpressionStmt"),
+                };
+            }
+            _ => panic!("expression should be an FunctionLiteral"),
+        };
+    }
+
+    #[test]
+    fn test_function_parameter_parsing() {
+        let test_cases = [
+            ("fn() {};", vec![]),
+            ("fn(x) {};", vec!["x"]),
+            ("fn(x,y,z) {};", vec!["x", "y", "z"]),
+        ];
+        for (input, expected_params) in test_cases {
+            let mut program = Parser::new(input).parse_program().unwrap();
+            assert!(program.statements.len() == 1);
+            // outer statement should be an expression statement
+            // retrieve expression from statement
+            let stmt = program.statements.pop().unwrap();
+            let expr = match stmt {
+                Statement::ExpressionStmt { value, .. } => value,
+                _ => panic!("statement is not an ExpressionStatement"),
+            };
+
+            // the expression should be an if expession
+            match expr {
+                Expression::FunctionLiteral { parameters, .. } => {
+                    let params = parameters.into_iter().map(|v| v.value).collect::<Vec<_>>();
+                    assert_eq!(expected_params, params);
+                }
+                _ => panic!("expression should be an FunctionLiteral"),
+            };
+        }
+    }
+
+    #[test]
+    fn test_if_expression() {
+        let input = "if (x < y) { x }";
+        let mut program = Parser::new(input).parse_program().unwrap();
+        assert!(program.statements.len() == 1);
+        // outer statement should be an expression statement
+        // retrieve expression from statement
+        let stmt = program.statements.pop().unwrap();
+        let expr = match stmt {
+            Statement::ExpressionStmt { value, .. } => value,
+            _ => panic!("statement is not an ExpressionStatement"),
+        };
+
+        // the expression should be an if expession
+        match expr {
+            Expression::IfExpression {
+                condition,
+                mut consequence,
+                alternative,
+                ..
+            } => {
+                use Literal::StrVal;
+                is_match_infix_expression(*condition, StrVal("x"), "<", StrVal("y")).unwrap();
+                assert!(consequence.statements.len() == 1);
+
+                match consequence.statements.pop().unwrap() {
+                    Statement::ExpressionStmt { value: expr, .. } => {
+                        is_match_identifier("x", expr).unwrap();
+                    }
+                    _ => panic!("Expected statement to be ExpressionStmt"),
+                };
+
+                assert!(alternative.is_none());
+            }
+            _ => panic!("expression should be an IfExpression"),
+        };
+    }
+
+    #[test]
+    fn test_if_else_expression() {
+        let input = "if (x < y) { x } else { y }";
+        let mut program = Parser::new(input).parse_program().unwrap();
+        assert!(program.statements.len() == 1);
+        // outer statement should be an expression statement
+        // retrieve expression from statement
+        let stmt = program.statements.pop().unwrap();
+        let expr = match stmt {
+            Statement::ExpressionStmt { value, .. } => value,
+            _ => panic!("statement is not an ExpressionStatement"),
+        };
+
+        // the expression should be an if expession
+        match expr {
+            Expression::IfExpression {
+                condition,
+                mut consequence,
+                alternative,
+                ..
+            } => {
+                use Literal::StrVal;
+                // condition
+                is_match_infix_expression(*condition, StrVal("x"), "<", StrVal("y")).unwrap();
+
+                // check if branch
+                assert!(consequence.statements.len() == 1);
+
+                match consequence.statements.pop().unwrap() {
+                    Statement::ExpressionStmt { value: expr, .. } => {
+                        is_match_identifier("x", expr).unwrap();
+                    }
+                    _ => panic!("Expected statement to be ExpressionStmt"),
+                };
+
+                // check else branch
+                let mut alternative = alternative.unwrap();
+                assert!(alternative.statements.len() == 1);
+                match alternative.statements.pop().unwrap() {
+                    Statement::ExpressionStmt { value: expr, .. } => {
+                        is_match_identifier("y", expr).unwrap();
+                    }
+                    _ => panic!("Expected statement to be ExpressionStmt"),
+                };
+            }
+            _ => panic!("expression should be an IfExpression"),
+        };
     }
 }
