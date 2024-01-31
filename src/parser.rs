@@ -96,12 +96,9 @@ impl Parser {
             token: token_clone,
             value: expression,
         };
-        // after expression we might or might not get a semi-colon
-        // TODO: change for other statements too to handle peeked semicolon
-        // without setting err
-        // if self.peek_expect_or_set_err(TokenType::SEMICOLON) {
+
         if self.peek_token_is(TokenType::SEMICOLON) {
-            self.tokens.pop_front();
+            let _ = self.tokens.pop_front();
         }
         Some(stmt)
     }
@@ -363,26 +360,15 @@ impl Parser {
         let return_token = self.tokens.pop_front().unwrap();
         assert!(return_token.token_type == TokenType::RETURN);
 
-        // TODO currently skipping expression until we encounter a semi-colon
-        loop {
-            let curr_token = self.tokens.pop_front().unwrap();
-            match curr_token.token_type {
-                TokenType::SEMICOLON => break,
-                TokenType::EOF => {
-                    self.error_msgs
-                        .push("Unexpected end of let statement".into());
-                    // place implicit semi-colon
-                    self.tokens
-                        .push_back(Token::new(TokenType::SEMICOLON, ";".into()));
-                    self.tokens.push_back(curr_token); // push back eof
-                    return None;
-                }
-                _ => continue,
-            }
+        let value = self.parse_expression(Precedence::Lowest)?;
+
+        if self.peek_token_is(TokenType::SEMICOLON) {
+            let _ = self.tokens.pop_front();
         }
+
         Some(Statement::ReturnStmt {
             token: return_token,
-            value: Expression::Empty,
+            value: value,
         })
     }
 
@@ -404,33 +390,20 @@ impl Parser {
 
         // after ident token we should get an assign token
         if !self.peek_expect_or_set_err(TokenType::ASSIGN) {
-            self.tokens.pop_front();
             return None;
         }
         let _ = self.tokens.pop_front();
 
-        // TODO currently skipping expression until we encounter a semi-colon
-        loop {
-            let curr_token = self.tokens.pop_front().unwrap();
-            match curr_token.token_type {
-                TokenType::SEMICOLON => break,
-                TokenType::EOF => {
-                    self.error_msgs
-                        .push("Unexpected end of let statement".into());
-                    // place implicit semi-colon
-                    self.tokens
-                        .push_back(Token::new(TokenType::SEMICOLON, ";".into()));
-                    self.tokens.push_back(curr_token); // push back eof
-                    return None;
-                }
-                _ => continue,
-            }
+        let value = self.parse_expression(Precedence::Lowest)?;
+
+        if self.peek_token_is(TokenType::SEMICOLON) {
+            let _ = self.tokens.pop_front();
         }
 
         Some(Statement::LetStmt {
             token: let_token,
             name: identifier,
-            value: Expression::Empty,
+            value,
         })
     }
     fn parse_block_statement(&mut self) -> Option<BlockStatement> {
@@ -911,6 +884,45 @@ mod parser_tests {
             }
             _ => panic!("expression should be an IfExpression"),
         };
+    }
+
+    #[test]
+    fn test_let_statement() {
+        use Literal::*;
+        let test_cases = [
+            ("let x = 5;", "x", IntVal(5)),
+            ("let y = true;", "y", BoolVal(true)),
+            ("let foobar = y;", "foobar", StrVal("y")),
+        ];
+        for (input, expected_identifier, expected_value) in test_cases {
+            let mut program = Parser::new(input).parse_program().unwrap();
+            assert!(program.statements.len() == 1);
+            let (got_identifier, got_value) = match program.statements.pop().unwrap() {
+                Statement::LetStmt { name, value, .. } => (name.value, value),
+                _ => panic!("Expected LetStmt"),
+            };
+            assert_eq!(expected_identifier, got_identifier);
+            is_match_literal_expression(expected_value, &got_value).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_return_statement() {
+        use Literal::*;
+        let test_cases = [
+            ("return 5;", IntVal(5)),
+            ("return true;", BoolVal(true)),
+            ("return foobar;", StrVal("foobar")),
+        ];
+        for (input, expected_value) in test_cases {
+            let mut program = Parser::new(input).parse_program().unwrap();
+            assert!(program.statements.len() == 1);
+            let got_value = match program.statements.pop().unwrap() {
+                Statement::ReturnStmt { value, .. } => value,
+                _ => panic!("Expected ReturnStmt"),
+            };
+            is_match_literal_expression(expected_value, &got_value).unwrap();
+        }
     }
 
     #[test]
