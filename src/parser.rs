@@ -17,8 +17,8 @@ enum Precedence {
     Lowest,
     Equals,      // ==
     LessGreater, // > or <
-    Sum,         // +
-    Product,     // *
+    Sum,         // + or -
+    Product,     // * or /
     Prefix,      // -x or !x
     Call,        // my_function(x)
 }

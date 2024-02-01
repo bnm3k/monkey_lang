@@ -1,5 +1,5 @@
 use monkey::evaluator::eval_program;
-use monkey::object::Object;
+use monkey::object::{Environment, Object};
 use monkey::parser::Parser;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
@@ -7,6 +7,7 @@ use rustyline::DefaultEditor;
 fn main() -> eyre::Result<()> {
     println!("Monkey lang");
     let mut rl = DefaultEditor::new()?;
+    let mut env = Environment::new();
     'outer: loop {
         let readline = rl.readline("> ");
         match readline {
@@ -23,7 +24,7 @@ fn main() -> eyre::Result<()> {
                     }
                 };
                 // eval
-                let res = eval_program(program);
+                let res = eval_program(&mut env, program);
                 println!("{}", res.inspect());
                 // match res {
                 //     Object::Null => continue 'outer,

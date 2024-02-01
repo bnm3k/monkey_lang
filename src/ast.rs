@@ -4,6 +4,7 @@ pub trait Node: ToString {
     fn token_literal(&self) -> &str;
 }
 
+#[derive(Clone)]
 pub enum Statement {
     LetStmt {
         token: Token, // let token
@@ -20,6 +21,7 @@ pub enum Statement {
     },
 }
 
+#[derive(Clone)]
 pub struct BlockStatement {
     pub token: Token,
     pub statements: Vec<Statement>,
@@ -100,6 +102,7 @@ impl ToString for Program {
 }
 // Expressions
 
+#[derive(Clone)]
 pub enum Expression {
     Empty,
     Identifier(Identifier),
@@ -211,7 +214,7 @@ impl ToString for Expression {
                     &parameters
                         .into_iter()
                         .map(|v| v.to_string())
-                        .intersperse(String::from(","))
+                        .intersperse(String::from(", "))
                         .collect::<String>(),
                     ")",
                     &body.to_string(),
@@ -239,6 +242,7 @@ impl ToString for Expression {
     }
 }
 
+#[derive(Clone)]
 pub struct Identifier {
     pub token: token::Token, // token.IDENT token
     pub value: String,
