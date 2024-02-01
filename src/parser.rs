@@ -42,13 +42,32 @@ fn token_type_precedence(t: &Token) -> Option<Precedence> {
 }
 
 impl Parser {
-    pub fn new(input: &str) -> Self {
+    pub fn parse(input: &str) -> Result<ast::Program, Vec<String>> {
+        // init parser
         let lexer = Lexer::new(input);
         let tokens = lexer.collect::<VecDeque<_>>();
-        return Parser {
+        let mut parser = Parser {
             tokens,
             error_msgs: Vec::new(),
         };
+
+        // do parsing
+        let mut statements = Vec::<Statement>::new();
+        loop {
+            if parser.peek_token_is(TokenType::EOF) {
+                let _ = parser.tokens.pop_front();
+                break;
+            }
+            if let Some(statement) = parser.parse_statement() {
+                statements.push(statement)
+            }
+        }
+        let program = Program { statements };
+        if parser.error_msgs.len() > 0 {
+            Err(parser.error_msgs)
+        } else {
+            Ok(program)
+        }
     }
 
     fn peek_precedence(&self) -> Precedence {
@@ -56,27 +75,6 @@ impl Parser {
             .front()
             .and_then(token_type_precedence)
             .unwrap_or(Precedence::Lowest)
-    }
-
-    pub fn parse_program(mut self) -> Result<ast::Program, Vec<String>> {
-        let mut statements = Vec::<Statement>::new();
-        loop {
-            if self.peek_token_is(TokenType::EOF) {
-                let _ = self.tokens.pop_front();
-                break;
-            }
-            if let Some(statement) = self.parse_statement() {
-                statements.push(statement)
-            } else {
-                let _ = self.tokens.pop_front();
-            }
-        }
-        let program = Program { statements };
-        if self.error_msgs.len() > 0 {
-            Err(self.error_msgs)
-        } else {
-            Ok(program)
-        }
     }
 
     fn parse_statement(&mut self) -> Option<Statement> {
@@ -114,7 +112,10 @@ impl Parser {
             TRUE | FALSE => self.parse_boolean(),
             LPAREN => self.parse_grouped_expression(),
             FUNCTION => self.parse_function_literal(),
-            IF => self.parse_if_expression(),
+            IF => {
+                let res = self.parse_if_expression();
+                res
+            }
             _ => {
                 self.error_msgs.push(format!(
                     "no prefix parse function for {:?} found",
@@ -368,7 +369,7 @@ impl Parser {
 
         Some(Statement::ReturnStmt {
             token: return_token,
-            value: value,
+            value,
         })
     }
 
@@ -467,10 +468,7 @@ mod parser_tests {
             let y = 10;
             let foobar = 124124;
         "#;
-        let parser = Parser::new(input);
-        let program = parser
-            .parse_program()
-            .expect("should be parsed successfully");
+        let program = Parser::parse(input).expect("should be parsed successfully");
         assert_eq!(3, program.statements.len());
         let expected_identifiers = ["x", "y", "foobar"];
         for (i, expected_identifier) in expected_identifiers.into_iter().enumerate() {
@@ -494,10 +492,7 @@ mod parser_tests {
             return 10;
             return 9000;
         "#;
-        let parser = Parser::new(input);
-        let program = parser
-            .parse_program()
-            .expect("should be parsed successfully");
+        let program = Parser::parse(input).expect("should be parsed successfully");
         assert_eq!(3, program.statements.len());
         for stmt in program.statements {
             use Statement::*;
@@ -513,7 +508,7 @@ mod parser_tests {
     #[test]
     fn test_identifier_expression() {
         let input = "foobar;";
-        let mut program = Parser::new(input).parse_program().unwrap();
+        let mut program = Parser::parse(input).unwrap();
         assert_eq!(program.statements.len(), 1);
         let stmt = program.statements.pop().unwrap();
 
@@ -533,7 +528,7 @@ mod parser_tests {
     #[test]
     fn test_integer_literal_expression() {
         let input = "55;";
-        let mut program = Parser::new(input).parse_program().unwrap();
+        let mut program = Parser::parse(input).unwrap();
         assert_eq!(program.statements.len(), 1);
         let stmt = program.statements.pop().unwrap();
 
@@ -549,7 +544,7 @@ mod parser_tests {
     fn test_boolean_expression() {
         let test_cases = [("true;", true), ("false;", false)];
         for (input, expect) in test_cases {
-            let mut program = Parser::new(input).parse_program().unwrap();
+            let mut program = Parser::parse(input).unwrap();
             assert_eq!(program.statements.len(), 1);
             let stmt = program.statements.pop().unwrap();
 
@@ -654,7 +649,7 @@ mod parser_tests {
             ("!false;", "!", BoolVal(false)),
         ];
         for (input, expected_operator, expected_value) in test_cases {
-            let mut program = Parser::new(input).parse_program().unwrap();
+            let mut program = Parser::parse(input).unwrap();
             assert_eq!(program.statements.len(), 1);
             let stmt = program.statements.pop().unwrap();
             let expression = match stmt {
@@ -689,7 +684,7 @@ mod parser_tests {
             ("false == false", BoolVal(false), "==", BoolVal(false)),
         ];
         for (input, left, operator, right) in test_cases {
-            let mut program = Parser::new(input).parse_program().unwrap();
+            let mut program = Parser::parse(input).unwrap();
             assert_eq!(program.statements.len(), 1);
             let stmt = program.statements.pop().unwrap();
             let expression = match stmt {
@@ -739,7 +734,7 @@ mod parser_tests {
         ];
 
         for (input, expected) in test_cases {
-            let program = Parser::new(input).parse_program().unwrap();
+            let program = Parser::parse(input).unwrap();
             let actual = program.to_string();
             assert_eq!(expected, actual);
         }
@@ -748,7 +743,7 @@ mod parser_tests {
     #[test]
     fn test_function_literal_parsing() {
         let input = "fn(x, y) { x + y; }";
-        let mut program = Parser::new(input).parse_program().unwrap();
+        let mut program = Parser::parse(input).unwrap();
         assert!(program.statements.len() == 1);
         // outer statement should be an expression statement
         // retrieve expression from statement
@@ -790,7 +785,7 @@ mod parser_tests {
             ("fn(x,y,z) {};", vec!["x", "y", "z"]),
         ];
         for (input, expected_params) in test_cases {
-            let mut program = Parser::new(input).parse_program().unwrap();
+            let mut program = Parser::parse(input).unwrap();
             assert!(program.statements.len() == 1);
             // outer statement should be an expression statement
             // retrieve expression from statement
@@ -814,7 +809,7 @@ mod parser_tests {
     #[test]
     fn test_call_expression_parsing() {
         let input = "add(1, 2 * 3, 4 + 5);";
-        let mut program = Parser::new(input).parse_program().unwrap();
+        let mut program = Parser::parse(input).unwrap();
         assert!(program.statements.len() == 1);
         // outer statement should be an expression statement
         // retrieve expression from statement
@@ -849,7 +844,7 @@ mod parser_tests {
     #[test]
     fn test_if_expression() {
         let input = "if (x < y) { x }";
-        let mut program = Parser::new(input).parse_program().unwrap();
+        let mut program = Parser::parse(input).unwrap();
         assert!(program.statements.len() == 1);
         // outer statement should be an expression statement
         // retrieve expression from statement
@@ -895,7 +890,7 @@ mod parser_tests {
             ("let foobar = y;", "foobar", StrVal("y")),
         ];
         for (input, expected_identifier, expected_value) in test_cases {
-            let mut program = Parser::new(input).parse_program().unwrap();
+            let mut program = Parser::parse(input).unwrap();
             assert!(program.statements.len() == 1);
             let (got_identifier, got_value) = match program.statements.pop().unwrap() {
                 Statement::LetStmt { name, value, .. } => (name.value, value),
@@ -915,7 +910,7 @@ mod parser_tests {
             ("return foobar;", StrVal("foobar")),
         ];
         for (input, expected_value) in test_cases {
-            let mut program = Parser::new(input).parse_program().unwrap();
+            let mut program = Parser::parse(input).unwrap();
             assert!(program.statements.len() == 1);
             let got_value = match program.statements.pop().unwrap() {
                 Statement::ReturnStmt { value, .. } => value,
@@ -928,7 +923,7 @@ mod parser_tests {
     #[test]
     fn test_if_else_expression() {
         let input = "if (x < y) { x } else { y }";
-        let mut program = Parser::new(input).parse_program().unwrap();
+        let mut program = Parser::parse(input).unwrap();
         assert!(program.statements.len() == 1);
         // outer statement should be an expression statement
         // retrieve expression from statement
