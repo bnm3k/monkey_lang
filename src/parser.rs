@@ -63,7 +63,9 @@ impl Parser {
                 statements.push(statement)
             } else {
                 // error occured
-                let _ = parser.tokens.pop_front();
+                if !parser.peek_token_is(TokenType::EOF) {
+                    let _ = parser.tokens.pop_front();
+                }
             }
         }
         let program = Program { statements };

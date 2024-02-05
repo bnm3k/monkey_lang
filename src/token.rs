@@ -1,5 +1,5 @@
 #![allow(non_camel_case_types, dead_code)]
-use std::{collections::HashMap, convert::TryFrom};
+use std::{collections::HashMap, convert::TryFrom, fmt::Debug};
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum TokenType {
@@ -50,10 +50,16 @@ impl TryFrom<char> for TokenType {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Token {
     pub token_type: TokenType,
     pub literal: String,
+}
+
+impl Debug for Token {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{{:?},\"{}\"}}", self.token_type, self.literal)
+    }
 }
 
 pub fn get_identifier_lookup() -> HashMap<String, TokenType> {

@@ -143,10 +143,11 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
                     ));
                 }
                 let mut extended_env = Environment::with_outer(&f.env);
+
+                // TODO: more cloning, bad idea
                 for (obj, name) in evaluated_args
                     .into_iter()
                     .zip(f.parameters.iter().map(|v| v.value.clone()))
-                // TODO: more cloning, bad idea
                 {
                     Environment::set(&extended_env, &name, &obj);
                 }
