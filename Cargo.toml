@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 eyre = "0.6.11"
+lazy_static = "1.4.0"
 rustyline = "13.0.0"

@@ -4,6 +4,39 @@ use std::rc::Rc;
 
 use crate::ast::BlockStatement;
 
+pub struct BuiltinFunction(pub Box<dyn Fn(Vec<Rc<Object>>) -> Object>);
+impl std::fmt::Debug for BuiltinFunction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "builtin-function")
+    }
+}
+
+unsafe impl Sync for BuiltinFunction {}
+
+pub struct Builtins {}
+impl Builtins {
+    pub fn len() -> BuiltinFunction {
+        let len_fn = |items: Vec<Rc<Object>>| -> Object {
+            let mut items = items;
+            if items.len() != 1 {
+                return Object::Error(format!(
+                    "wrong number of arguments. Got {}, want 1",
+                    items.len()
+                ));
+            }
+            let arg = items.swap_remove(0);
+            match &*arg {
+                Object::Str(s) => Object::Int(s.len() as i64),
+                _ => Object::Error(format!(
+                    "argument to `len` not supported, got {}",
+                    arg.type_as_str()
+                )),
+            }
+        };
+        BuiltinFunction(Box::new(len_fn))
+    }
+}
+
 #[derive(Debug)]
 pub enum Object {
     Null,
@@ -11,6 +44,7 @@ pub enum Object {
     Bool(bool),
     Str(String),
     Function(Function),
+    BuiltinFunction(String),
     Return(Rc<Object>),
     Error(String),
 }
@@ -46,6 +80,7 @@ impl Object {
             Return(v) => v.inspect(),
             Error(msg) => format!("Evaluation Error:\n- {}\n", msg),
             Function(f) => f.inspect(),
+            BuiltinFunction(_) => "builtin function".into(),
         }
     }
 
@@ -59,6 +94,7 @@ impl Object {
             Return(_) => "RETURN_VALUE",
             Error(_) => "ERROR",
             Function { .. } => "FUNCTION_OBJ",
+            BuiltinFunction(_) => "BUILTIN",
         }
     }
 }

@@ -1,8 +1,19 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
+use lazy_static::lazy_static;
+
 use crate::ast::{self, Expression, Statement};
-use crate::object::{Environment, Function, Object};
+use crate::object::{BuiltinFunction, Builtins, Environment, Function, Object};
+
+lazy_static! {
+    static ref BUILTINS: HashMap<String, BuiltinFunction> = {
+        let mut m = HashMap::new();
+        m.insert("len".into(), Builtins::len());
+        m
+    };
+}
 
 type Env = Rc<RefCell<Environment>>;
 
@@ -106,6 +117,8 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
         Identifier(identifier) => {
             if let Some(obj) = Environment::get(env, &identifier.value) {
                 obj
+            } else if BUILTINS.contains_key(&identifier.value) {
+                Rc::new(Object::BuiltinFunction(identifier.value.clone()))
             } else {
                 to_err_obj(format!("identifier not found: {}", &identifier.value))
             }
@@ -139,6 +152,10 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
             }
             let function = match &*res {
                 Object::Function(f) => f,
+                Object::BuiltinFunction(id) => {
+                    let builtin_funcion = BUILTINS.get(id).unwrap();
+                    return Rc::new(builtin_funcion.0(evaluated_args));
+                }
                 _ => {
                     return to_err_obj(format!(
                         "Attempting call on object that is not a function. Got: {:?}",
@@ -304,10 +321,15 @@ mod evaluator_tests {
         Ok(())
     }
 
-    fn is_match_str_obj(expected: &str, obj: &Object) -> Result<(), TestError> {
+    fn is_match_str_obj(
+        expected_type: &str,
+        expected: &str,
+        obj: &Object,
+    ) -> Result<(), TestError> {
         let got = match obj {
             Object::Str(v) => v,
-            _ => return Err(format!("Object is not a str, got: {:?}", obj).into()),
+            Object::Error(v) => v,
+            _ => return Err(format!("Object is not a {}, got: {:?}", expected_type, obj).into()),
         };
         if expected != got {
             return Err(format!("Expected {}, got {}", expected, got).into());
@@ -332,6 +354,8 @@ mod evaluator_tests {
             (Null, Null) => Ok(()),
             (Bool(v), _) => is_match_bool_obj(v, got),
             (Int(v), _) => is_match_integer_obj(v, got),
+            (Str(v), _) => is_match_str_obj("Str", v, got),
+            (Error(v), _) => is_match_str_obj("Error", v, got),
             (_, _) => Err(format!("Expected {:?}, got {:?}", expected, got).into()),
         }
     }
@@ -553,8 +577,8 @@ mod evaluator_tests {
     fn test_string_literal() -> eyre::Result<()> {
         let input = r#" "Hello World!" "#;
         let got = do_eval(input)?;
-        let expected = "Hello World!";
-        is_match_str_obj(&expected, &got)?;
+        let expected = Object::Str("Hello World!".into());
+        is_match_obj(&expected, &got)?;
         Ok(())
     }
 
@@ -562,8 +586,31 @@ mod evaluator_tests {
     fn test_string_concat() -> eyre::Result<()> {
         let input = r#" "Hello" + " " + "World!" "#;
         let got = do_eval(input)?;
-        let expected = "Hello World!";
-        is_match_str_obj(&expected, &got)?;
+        let expected = Object::Str("Hello World!".into());
+        is_match_obj(&expected, &got)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_builtin_functions() -> eyre::Result<()> {
+        use Object::*;
+        let test_cases = [
+            (r#"len("")"#, Int(0)),
+            (r#"len("four")"#, Int(4)),
+            (r#"len("hello world")"#, Int(11)),
+            (
+                r#"len(1)"#,
+                Error("argument to `len` not supported, got INTEGER".into()),
+            ),
+            (
+                r#"len("one", "two")"#,
+                Error("wrong number of arguments. Got 2, want 1".into()),
+            ),
+        ];
+        for (input, expected) in test_cases {
+            let got = do_eval(input)?;
+            is_match_obj(&expected, &got)?;
+        }
         Ok(())
     }
 }
