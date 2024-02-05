@@ -111,6 +111,10 @@ pub enum Expression {
         token: Token,
         value: String,
     },
+    ArrayLiteral {
+        token: Token,
+        elements: Vec<Expression>,
+    },
     Boolean {
         token: Token,
         value: bool,
@@ -125,6 +129,11 @@ pub enum Expression {
         left: Box<Expression>,
         operator: String,
         right: Box<Expression>,
+    },
+    IndexExpression {
+        token: Token,
+        left: Box<Expression>,
+        index: Box<Expression>,
     },
     IfExpression {
         token: Token, // the 'if' token
@@ -158,6 +167,8 @@ impl Node for Expression {
             FunctionLiteral { token, .. } => &token.literal,
             CallExpression { token, .. } => &token.literal,
             StringLiteral { token, .. } => &token.literal,
+            ArrayLiteral { token, .. } => &token.literal,
+            IndexExpression { token, .. } => &token.literal,
         }
     }
 }
@@ -191,6 +202,10 @@ impl ToString for Expression {
                     &right.to_string(),
                     ")",
                 ];
+                parts.into_iter().collect::<String>()
+            }
+            IndexExpression { left, index, .. } => {
+                let parts = ["(", &left.to_string(), "[", &index.to_string(), "])"];
                 parts.into_iter().collect::<String>()
             }
             IfExpression {
@@ -238,6 +253,18 @@ impl ToString for Expression {
                         .intersperse(String::from(", "))
                         .collect::<String>(),
                     ")",
+                ];
+                parts.into_iter().collect::<String>()
+            }
+            ArrayLiteral { elements, .. } => {
+                let parts = [
+                    "[",
+                    &elements
+                        .iter()
+                        .map(|v| v.to_string())
+                        .intersperse(String::from(", "))
+                        .collect::<String>(),
+                    "]",
                 ];
                 parts.into_iter().collect::<String>()
             }

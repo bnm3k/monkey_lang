@@ -4,5 +4,6 @@ pub mod object;
 pub mod parser;
 
 mod ast;
+mod builtins;
 mod lexer;
 mod token;

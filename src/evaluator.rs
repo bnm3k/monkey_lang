@@ -5,12 +5,17 @@ use std::rc::Rc;
 use lazy_static::lazy_static;
 
 use crate::ast::{self, Expression, Statement};
-use crate::object::{BuiltinFunction, Builtins, Environment, Function, Object};
+use crate::builtins::{BuiltinFunction, Builtins};
+use crate::object::{Environment, Function, Object};
 
 lazy_static! {
     static ref BUILTINS: HashMap<String, BuiltinFunction> = {
         let mut m = HashMap::new();
         m.insert("len".into(), Builtins::len());
+        m.insert("first".into(), Builtins::first());
+        m.insert("last".into(), Builtins::last());
+        m.insert("rest".into(), Builtins::rest());
+        m.insert("push".into(), Builtins::push());
         m
     };
 }
@@ -137,6 +142,18 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
             };
             Rc::new(Object::Function(function))
         }
+        ArrayLiteral { elements, .. } => {
+            let evaluated_elems = eval_expressions(env, elements);
+            if evaluated_elems.len() == 1 && evaluated_elems[0].is_err() {
+                return Rc::clone(&evaluated_elems[0]);
+            }
+            Rc::new(Object::Array(evaluated_elems))
+        }
+        IndexExpression { left, index, .. } => {
+            let left = eval_expression(env, left);
+            let index = eval_expression(env, index);
+            eval_index_expression(env, &left, &index)
+        }
         CallExpression {
             function: expr,
             arguments,
@@ -154,7 +171,7 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
                 Object::Function(f) => f,
                 Object::BuiltinFunction(id) => {
                     let builtin_funcion = BUILTINS.get(id).unwrap();
-                    return Rc::new(builtin_funcion.0(evaluated_args));
+                    return builtin_funcion.0(evaluated_args);
                 }
                 _ => {
                     return to_err_obj(format!(
@@ -202,6 +219,24 @@ fn is_truthy(obj: &Object) -> bool {
     match obj {
         Object::Null | Object::Bool(false) => false,
         _ => true,
+    }
+}
+fn eval_index_expression(_env: &Env, left: &Object, index: &Object) -> Rc<Object> {
+    use Object::{Array, Int};
+    match (left, index) {
+        (Array(vs), Int(n)) => {
+            if *n < 0 {
+                return Object::null();
+            }
+            let index = *n as usize;
+            vs.get(index)
+                .map(|v| Rc::clone(v))
+                .unwrap_or(Object::null())
+        }
+        (_, _) => to_err_obj(format!(
+            "index operator not supported: {:?}",
+            left.type_as_str()
+        )),
     }
 }
 
@@ -606,6 +641,49 @@ mod evaluator_tests {
                 r#"len("one", "two")"#,
                 Error("wrong number of arguments. Got 2, want 1".into()),
             ),
+        ];
+        for (input, expected) in test_cases {
+            let got = do_eval(input)?;
+            is_match_obj(&expected, &got)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_array_literals() -> eyre::Result<()> {
+        let input = "[1, 2 * 2, 3 + 3]";
+        let got = do_eval(input)?;
+        let elems = match &*got {
+            Object::Array(elems) => elems,
+            _ => panic!("expected result to be array object"),
+        };
+        use Object::Int;
+        is_match_obj(&Int(1), &elems[0])?;
+        is_match_obj(&Int(4), &elems[1])?;
+        is_match_obj(&Int(6), &elems[2])?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_array_index_expressions() -> eyre::Result<()> {
+        use Object::Int;
+        let test_cases = [
+            ("[1, 2, 3][0]", Int(1)),
+            ("[1, 2, 3][1]", Int(2)),
+            ("[1, 2, 3][2]", Int(3)),
+            ("let i = 0; [1][i];", Int(1)),
+            ("[1, 2, 3][1 + 1];", Int(3)),
+            ("let myArray = [1, 2, 3]; myArray[2];", Int(3)),
+            (
+                "let myArray = [1, 2, 3]; myArray[0] + myArray[1] + myArray[2];",
+                Int(6),
+            ),
+            (
+                "let myArray = [1, 2, 3]; let i = myArray[0]; myArray[i]",
+                Int(2),
+            ),
+            ("[1, 2, 3][3]", Object::Null),
+            ("[1, 2, 3][-1]", Object::Null),
         ];
         for (input, expected) in test_cases {
             let got = do_eval(input)?;

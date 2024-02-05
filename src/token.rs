@@ -27,10 +27,12 @@ pub enum TokenType {
     COMMA,
     SEMICOLON,
 
-    LPAREN,
-    RPAREN,
-    LBRACE,
-    RBRACE,
+    LPAREN,   // (
+    RPAREN,   // )
+    LBRACE,   // {
+    RBRACE,   // }
+    LBRACKET, // [
+    RBRACKET, // ]
 
     // keywords
     FUNCTION,

@@ -22,6 +22,7 @@ enum Precedence {
     Product,     // * or /
     Prefix,      // -x or !x
     Call,        // my_function(x)
+    Index,
 }
 
 fn token_type_precedence(t: &Token) -> Option<Precedence> {
@@ -37,6 +38,7 @@ fn token_type_precedence(t: &Token) -> Option<Precedence> {
         SLASH => Product,
         ASTERISK => Product,
         LPAREN => Call,
+        LBRACKET => Index,
         _ => return None,
     };
     Some(p)
@@ -140,6 +142,7 @@ impl Parser {
             LPAREN => self.parse_grouped_expression(),
             FUNCTION => self.parse_function_literal(),
             STRING => self.parse_string_literal(),
+            LBRACKET => self.parse_array_literal(),
             IF => {
                 let res = self.parse_if_expression();
                 res
@@ -161,6 +164,7 @@ impl Parser {
                     self.parse_infix_expression(left_expression)
                 }
                 LPAREN => self.parse_call_expression(left_expression),
+                LBRACKET => self.parse_index_expression(left_expression),
                 _ => return Some(left_expression),
             };
             left_expression = got.unwrap()
@@ -171,7 +175,7 @@ impl Parser {
     fn parse_call_expression(&mut self, function: Expression) -> Option<Expression> {
         let lparen_token = self.tokens.pop_front().unwrap();
         assert_eq!(TokenType::LPAREN, lparen_token.token_type);
-        let arguments = self.parse_call_arguments()?;
+        let arguments = self.parse_expression_list(TokenType::RPAREN)?;
         Some(Expression::CallExpression {
             token: lparen_token,
             function: Box::new(function),
@@ -179,27 +183,52 @@ impl Parser {
         })
     }
 
-    fn parse_call_arguments(&mut self) -> Option<Vec<Expression>> {
-        let mut arguments = Vec::new();
-        // handle empty argument list
-        if self.peek_token_is(TokenType::RPAREN) {
-            let _ = self.tokens.pop_front();
-            return Some(arguments);
+    fn parse_index_expression(&mut self, left: Expression) -> Option<Expression> {
+        let lbracket_token = self.tokens.pop_front().unwrap();
+        assert_eq!(TokenType::LBRACKET, lbracket_token.token_type);
+        let index = self.parse_expression(Precedence::Lowest)?;
+        if !self.peek_expect_or_set_err(TokenType::RBRACKET) {
+            return None;
         }
-        // handle first arg
-        let first_arg = self.parse_expression(Precedence::Lowest)?;
-        arguments.push(first_arg);
+        let _ = self.tokens.pop_front();
+        Some(Expression::IndexExpression {
+            token: lbracket_token,
+            left: Box::new(left),
+            index: Box::new(index),
+        })
+    }
+
+    fn parse_array_literal(&mut self) -> Option<Expression> {
+        let lbracket_token = self.tokens.pop_front().unwrap();
+        assert_eq!(TokenType::LBRACKET, lbracket_token.token_type);
+        let elements = self.parse_expression_list(TokenType::RBRACKET)?;
+        Some(Expression::ArrayLiteral {
+            token: lbracket_token,
+            elements,
+        })
+    }
+
+    fn parse_expression_list(&mut self, end: TokenType) -> Option<Vec<Expression>> {
+        let mut items = Vec::new();
+        // handle empty list
+        if self.peek_token_is(end) {
+            let _ = self.tokens.pop_front();
+            return Some(items);
+        }
+        // handle first element
+        let first = self.parse_expression(Precedence::Lowest)?;
+        items.push(first);
         while self.peek_token_is(TokenType::COMMA) {
             let _ = self.tokens.pop_front();
-            let arg = self.parse_expression(Precedence::Lowest)?;
-            arguments.push(arg);
+            let item = self.parse_expression(Precedence::Lowest)?;
+            items.push(item);
         }
-        if !self.peek_expect_or_set_err(TokenType::RPAREN) {
+        if !self.peek_expect_or_set_err(end) {
             return None;
         } else {
             let _ = self.tokens.pop_front();
         }
-        Some(arguments)
+        Some(items)
     }
 
     fn parse_prefix_expression(&mut self) -> Option<Expression> {
@@ -498,6 +527,84 @@ impl Parser {
 mod parser_tests {
     use crate::ast::Statement;
 
+    fn is_match_integer_literal(expect: i64, expr: &Expression) -> Result<(), &'static str> {
+        if let Expression::IntegerLiteral { value: got, .. } = expr {
+            if expect != *got {
+                return Err("values do not match");
+            }
+            if got.to_string() != expr.token_literal() {
+                return Err("token literal values do not match");
+            }
+        } else {
+            return Err("Expected expression to be Integer Literal");
+        }
+        Ok(())
+    }
+
+    fn is_match_bool_literal(expect: bool, expr: &Expression) -> Result<(), &'static str> {
+        if let Expression::Boolean { value: got, .. } = expr {
+            if expect != *got {
+                return Err("values do not match");
+            }
+            if got.to_string() != expr.token_literal() {
+                return Err("token literal values do not match");
+            }
+        } else {
+            return Err("Expected expression to be Boolean Literal");
+        }
+        Ok(())
+    }
+
+    fn is_match_identifier(expect: &str, expr: &Expression) -> Result<(), &'static str> {
+        if let Expression::Identifier(identifier) = expr {
+            if identifier.value != expect {
+                return Err("values do not match");
+            }
+            if identifier.token_literal() != expect {
+                return Err("token literal values do not match");
+            }
+        } else {
+            return Err("Expected expression to be Identifier");
+        }
+        Ok(())
+    }
+
+    enum Literal<'a> {
+        IntVal(i64),
+        StrVal(&'a str),
+        BoolVal(bool),
+    }
+
+    fn is_match_literal_expression(expect: Literal, expr: &Expression) -> Result<(), &'static str> {
+        use Literal::*;
+        match expect {
+            IntVal(expect) => is_match_integer_literal(expect, expr),
+            StrVal(expect) => is_match_identifier(expect, expr),
+            BoolVal(expect) => is_match_bool_literal(expect, expr),
+        }
+    }
+
+    fn is_match_infix_expression(
+        expr: &Expression,
+        left: Literal,
+        operator: &str,
+        right: Literal,
+    ) -> Result<(), &'static str> {
+        let (got_left, got_operator, got_right) = match expr {
+            Expression::InfixExpression {
+                left,
+                operator,
+                right,
+                ..
+            } => (left, operator, right),
+            _ => panic!("Expect infix expression"),
+        };
+        is_match_literal_expression(left, got_left)?;
+        assert_eq!(operator, got_operator);
+        is_match_literal_expression(right, got_right)?;
+        Ok(())
+    }
+
     use super::*;
     #[test]
     fn test_let_statements() {
@@ -599,84 +706,6 @@ mod parser_tests {
         }
     }
 
-    fn is_match_integer_literal(expect: i64, expr: &Expression) -> Result<(), &'static str> {
-        if let Expression::IntegerLiteral { value: got, .. } = expr {
-            if expect != *got {
-                return Err("values do not match");
-            }
-            if got.to_string() != expr.token_literal() {
-                return Err("token literal values do not match");
-            }
-        } else {
-            return Err("Expected expression to be Integer Literal");
-        }
-        Ok(())
-    }
-
-    fn is_match_bool_literal(expect: bool, expr: &Expression) -> Result<(), &'static str> {
-        if let Expression::Boolean { value: got, .. } = expr {
-            if expect != *got {
-                return Err("values do not match");
-            }
-            if got.to_string() != expr.token_literal() {
-                return Err("token literal values do not match");
-            }
-        } else {
-            return Err("Expected expression to be Boolean Literal");
-        }
-        Ok(())
-    }
-
-    fn is_match_identifier(expect: &str, expr: &Expression) -> Result<(), &'static str> {
-        if let Expression::Identifier(identifier) = expr {
-            if identifier.value != expect {
-                return Err("values do not match");
-            }
-            if identifier.token_literal() != expect {
-                return Err("token literal values do not match");
-            }
-        } else {
-            return Err("Expected expression to be Identifier");
-        }
-        Ok(())
-    }
-
-    enum Literal<'a> {
-        IntVal(i64),
-        StrVal(&'a str),
-        BoolVal(bool),
-    }
-
-    fn is_match_literal_expression(expect: Literal, expr: &Expression) -> Result<(), &'static str> {
-        use Literal::*;
-        match expect {
-            IntVal(expect) => is_match_integer_literal(expect, expr),
-            StrVal(expect) => is_match_identifier(expect, expr),
-            BoolVal(expect) => is_match_bool_literal(expect, expr),
-        }
-    }
-
-    fn is_match_infix_expression(
-        expr: &Expression,
-        left: Literal,
-        operator: &str,
-        right: Literal,
-    ) -> Result<(), &'static str> {
-        let (got_left, got_operator, got_right) = match expr {
-            Expression::InfixExpression {
-                left,
-                operator,
-                right,
-                ..
-            } => (left, operator, right),
-            _ => panic!("Expect infix expression"),
-        };
-        is_match_literal_expression(left, got_left)?;
-        assert_eq!(operator, got_operator);
-        is_match_literal_expression(right, got_right)?;
-        Ok(())
-    }
-
     #[test]
     fn test_prefix_expressions() {
         use Literal::*;
@@ -768,6 +797,14 @@ mod parser_tests {
             (
                 "add(a + b + c * d / f + g)",
                 "add((((a + b) + ((c * d) / f)) + g))",
+            ),
+            (
+                "a * [1, 2, 3, 4][b * c] * d",
+                "((a * ([1, 2, 3, 4][(b * c)])) * d)",
+            ),
+            (
+                "add(a * b[2], b[1], 2 * [1, 2][1])",
+                "add((a * (b[2])), (b[1]), (2 * ([1, 2][1])))",
             ),
         ];
 
@@ -1024,5 +1061,46 @@ mod parser_tests {
             }
             _ => panic!("expression should be a StringLiteral"),
         }
+    }
+
+    #[test]
+    fn test_parsing_array_literals() {
+        let input = "[1, 2 * 2, 3 + 3]";
+        let mut program = Parser::parse(input).unwrap();
+        assert!(program.statements.len() == 1);
+        let stmt = program.statements.pop().unwrap();
+        let expr = match stmt {
+            Statement::ExpressionStmt { value, .. } => value,
+            _ => panic!("statement is not an ExpressionStatement"),
+        };
+        let elements = match expr {
+            Expression::ArrayLiteral { elements, .. } => elements,
+            _ => panic!("expression should be a StringLiteral"),
+        };
+        is_match_integer_literal(1, &elements[0]).unwrap();
+        use Literal::IntVal;
+        is_match_infix_expression(&elements[1], IntVal(2), "*", IntVal(2)).unwrap();
+        is_match_infix_expression(&elements[2], IntVal(3), "+", IntVal(3)).unwrap();
+    }
+
+    #[test]
+    fn test_parsing_index_expressions() {
+        let input = "my_array[1 + 1]";
+        let mut program = Parser::parse(input).unwrap();
+        assert!(program.statements.len() == 1);
+        let stmt = program.statements.pop().unwrap();
+        let expr = match stmt {
+            Statement::ExpressionStmt { value, .. } => value,
+            _ => panic!("statement is not an ExpressionStatement"),
+        };
+        let (left, index) = match expr {
+            Expression::IndexExpression {
+                left: l, index: i, ..
+            } => (l, i),
+            _ => panic!("expression should be a StringLiteral"),
+        };
+        use Literal::IntVal;
+        is_match_literal_expression(Literal::StrVal("my_array"), &left).unwrap();
+        is_match_infix_expression(&index, IntVal(1), "+", IntVal(1)).unwrap();
     }
 }

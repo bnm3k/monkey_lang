@@ -4,39 +4,6 @@ use std::rc::Rc;
 
 use crate::ast::BlockStatement;
 
-pub struct BuiltinFunction(pub Box<dyn Fn(Vec<Rc<Object>>) -> Object>);
-impl std::fmt::Debug for BuiltinFunction {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "builtin-function")
-    }
-}
-
-unsafe impl Sync for BuiltinFunction {}
-
-pub struct Builtins {}
-impl Builtins {
-    pub fn len() -> BuiltinFunction {
-        let len_fn = |items: Vec<Rc<Object>>| -> Object {
-            let mut items = items;
-            if items.len() != 1 {
-                return Object::Error(format!(
-                    "wrong number of arguments. Got {}, want 1",
-                    items.len()
-                ));
-            }
-            let arg = items.swap_remove(0);
-            match &*arg {
-                Object::Str(s) => Object::Int(s.len() as i64),
-                _ => Object::Error(format!(
-                    "argument to `len` not supported, got {}",
-                    arg.type_as_str()
-                )),
-            }
-        };
-        BuiltinFunction(Box::new(len_fn))
-    }
-}
-
 #[derive(Debug)]
 pub enum Object {
     Null,
@@ -46,6 +13,7 @@ pub enum Object {
     Function(Function),
     BuiltinFunction(String),
     Return(Rc<Object>),
+    Array(Vec<Rc<Object>>),
     Error(String),
 }
 
@@ -81,6 +49,17 @@ impl Object {
             Error(msg) => format!("Evaluation Error:\n- {}\n", msg),
             Function(f) => f.inspect(),
             BuiltinFunction(_) => "builtin function".into(),
+            Array(vs) => {
+                let parts = [
+                    "[",
+                    &vs.iter()
+                        .map(|v| v.inspect())
+                        .intersperse(String::from(", "))
+                        .collect::<String>(),
+                    "]",
+                ];
+                parts.into_iter().collect::<String>()
+            }
         }
     }
 
@@ -95,6 +74,7 @@ impl Object {
             Error(_) => "ERROR",
             Function { .. } => "FUNCTION_OBJ",
             BuiltinFunction(_) => "BUILTIN",
+            Array(_) => "ARRAY_OBJ",
         }
     }
 }

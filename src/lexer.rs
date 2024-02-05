@@ -134,6 +134,8 @@ impl Iterator for Lexer {
             ')' => Token::new(RPAREN, curr.into()),
             '{' => Token::new(LBRACE, curr.into()),
             '}' => Token::new(RBRACE, curr.into()),
+            '[' => Token::new(LBRACKET, curr.into()),
+            ']' => Token::new(RBRACKET, curr.into()),
             '"' => Token::new(STRING, self.read_string()),
             '\0' => Token::new(EOF, "".into()),
             c @ _ => {
@@ -236,6 +238,7 @@ mod lexer_tests {
             10 != 9;
             "foobar"
             "foo bar"
+            [1, 2];
         "#;
         let expected = vec![
             (LET, "let"),
@@ -313,6 +316,12 @@ mod lexer_tests {
             (SEMICOLON, ";"),
             (STRING, "foobar"),
             (STRING, "foo bar"),
+            (LBRACKET, "["),
+            (INT, "1"),
+            (COMMA, ","),
+            (INT, "2"),
+            (RBRACKET, "]"),
+            (SEMICOLON, ";"),
             (EOF, ""),
         ];
         let lexer = Lexer::new(input);
