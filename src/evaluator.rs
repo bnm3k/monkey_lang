@@ -112,56 +112,56 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
         FunctionLiteral {
             parameters, body, ..
         } => {
-            // TODO: too much cloning, not a good idea you know
             let parameters = parameters
                 .iter()
                 .map(|v| v.value.clone())
                 .collect::<Vec<_>>();
             let function = Function {
                 parameters,
-                body: body.clone(),
+                body: body.clone(), // TODO too much cloning?
                 env: env.clone(),
             };
             Rc::new(Object::Function(function))
         }
         CallExpression {
-            function,
+            function: expr,
             arguments,
             ..
         } => {
-            let res = eval_expression(env, function);
+            let res = eval_expression(env, expr);
             if res.is_err() {
                 return res;
             }
-            let mut evaluated_args = eval_expressions(env, arguments);
+            let evaluated_args = eval_expressions(env, arguments);
             if evaluated_args.len() == 1 && evaluated_args[0].is_err() {
-                return evaluated_args.remove(0); // TODO bad idea
+                return Rc::clone(&evaluated_args[0]);
             }
-            // TODO: there should be a better way
-            if let Object::Function(f) = &*res {
-                if f.parameters.len() != evaluated_args.len() {
+            let function = match &*res {
+                Object::Function(f) => f,
+                _ => {
                     return to_err_obj(format!(
-                        "Invalid number of arguments for function: expected {}, got {}",
-                        f.parameters.len(),
-                        evaluated_args.len(),
-                    ));
+                        "Attempting call on object that is not a function. Got: {:?}",
+                        res
+                    ))
                 }
-                let mut extended_env = Environment::with_outer(&f.env);
+            };
 
-                for (obj, name) in evaluated_args.into_iter().zip(f.parameters.iter()) {
-                    Environment::set(&extended_env, &name, &obj);
-                }
-                let result = eval_block_statements(&mut extended_env, &f.body.statements);
-                // TODO: is there a better way?
-                match &*result {
-                    Object::Return(v) => v.clone(),
-                    _ => result,
-                }
-            } else {
-                to_err_obj(format!(
-                    "Attempting call on object that is not a function. Got: {:?}",
-                    res
-                ))
+            if function.parameters.len() != evaluated_args.len() {
+                return to_err_obj(format!(
+                    "Invalid number of arguments for function: expected {}, got {}",
+                    function.parameters.len(),
+                    evaluated_args.len(),
+                ));
+            }
+            let mut extended_env = Environment::with_outer(&function.env);
+
+            for (obj, name) in evaluated_args.into_iter().zip(function.parameters.iter()) {
+                Environment::set(&extended_env, &name, &obj);
+            }
+            let result = eval_block_statements(&mut extended_env, &function.body.statements);
+            match &*result {
+                Object::Return(v) => v.clone(),
+                _ => result,
             }
         }
         _ => panic!("Should not reach here"),
@@ -252,7 +252,6 @@ fn eval_prefix_expression(_env: &Env, operator: &String, right: &Object) -> Rc<O
 
 #[cfg(test)]
 mod evaluator_tests {
-    use eyre::anyhow;
 
     use crate::{
         object::Object,

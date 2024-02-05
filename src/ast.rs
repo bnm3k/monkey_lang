@@ -130,7 +130,7 @@ pub enum Expression {
     },
     FunctionLiteral {
         token: Token,
-        parameters: Vec<Identifier>, // TODO consider using Identifier directly
+        parameters: Vec<Identifier>, // TODO consider using strings directly
         body: BlockStatement,
     },
     CallExpression {
