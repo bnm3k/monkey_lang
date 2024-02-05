@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::ast::{BlockStatement, Identifier};
+use crate::ast::BlockStatement;
 
 #[derive(Debug)]
 pub enum Object {
@@ -61,7 +61,7 @@ impl Object {
 }
 
 pub struct Function {
-    pub parameters: Vec<Identifier>,
+    pub parameters: Vec<String>,
     pub body: BlockStatement,
     pub env: Rc<RefCell<Environment>>,
 }
@@ -73,7 +73,7 @@ impl Function {
             &self
                 .parameters
                 .iter()
-                .map(|v| v.value.clone())
+                .map(|v| v.clone())
                 .intersperse(String::from(", "))
                 .collect::<String>(),
             ") {\n",

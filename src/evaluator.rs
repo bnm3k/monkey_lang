@@ -113,8 +113,12 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
             parameters, body, ..
         } => {
             // TODO: too much cloning, not a good idea you know
+            let parameters = parameters
+                .iter()
+                .map(|v| v.value.clone())
+                .collect::<Vec<_>>();
             let function = Function {
-                parameters: parameters.clone(),
+                parameters,
                 body: body.clone(),
                 env: env.clone(),
             };
@@ -144,11 +148,7 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
                 }
                 let mut extended_env = Environment::with_outer(&f.env);
 
-                // TODO: more cloning, bad idea
-                for (obj, name) in evaluated_args
-                    .into_iter()
-                    .zip(f.parameters.iter().map(|v| v.value.clone()))
-                {
+                for (obj, name) in evaluated_args.into_iter().zip(f.parameters.iter()) {
                     Environment::set(&extended_env, &name, &obj);
                 }
                 let result = eval_block_statements(&mut extended_env, &f.body.statements);
@@ -252,50 +252,69 @@ fn eval_prefix_expression(_env: &Env, operator: &String, right: &Object) -> Rc<O
 
 #[cfg(test)]
 mod evaluator_tests {
-    use crate::{object::Object, parser::Parser};
+    use eyre::anyhow;
+
+    use crate::{
+        object::Object,
+        parser::{Parser, ParserError},
+    };
 
     use super::*;
 
-    fn do_eval(input: &str) -> Result<Rc<Object>, Vec<String>> {
+    #[derive(Debug)]
+    struct TestError(String);
+    impl std::fmt::Display for TestError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            self.0.fmt(f)
+        }
+    }
+    impl std::error::Error for TestError {}
+    impl Into<TestError> for String {
+        fn into(self) -> TestError {
+            TestError(self)
+        }
+    }
+
+    fn do_eval(input: &str) -> Result<Rc<Object>, ParserError> {
         let mut env = Environment::new();
         let program = Parser::parse(input)?;
         return Ok(eval_program(&mut env, program));
     }
 
-    fn is_match_integer_obj(expected: &i64, obj: &Object) -> Result<(), String> {
+    fn is_match_integer_obj(expected: &i64, obj: &Object) -> Result<(), TestError> {
         let got = match obj {
             Object::Int(v) => v,
-            _ => return Err(format!("Object is not an integer, got: {:?}", obj)),
+            _ => return Err(format!("Object is not an integer, got: {:?}", obj).into()),
         };
         if expected != got {
-            return Err(format!("Expected {}, got {}", expected, got));
+            return Err(format!("Expected {}, got {}", expected, got).into());
         }
         Ok(())
     }
 
-    fn is_match_bool_obj(expected: &bool, obj: &Object) -> Result<(), String> {
+    fn is_match_bool_obj(expected: &bool, obj: &Object) -> Result<(), TestError> {
         let got = match obj {
             Object::Bool(v) => v,
-            _ => return Err(format!("Object is not a bool, got: {:?}", obj)),
+            _ => return Err(format!("Object is not a bool, got: {:?}", obj).into()),
         };
         if expected != got {
-            return Err(format!("Expected {}, got {}", expected, got));
+            return Err(format!("Expected {}, got {}", expected, got).into());
         }
         Ok(())
     }
 
-    fn is_match_obj(expected: &Object, got: &Object) -> Result<(), String> {
+    fn is_match_obj(expected: &Object, got: &Object) -> Result<(), TestError> {
         use Object::*;
         match (expected, &got) {
             (Null, Null) => Ok(()),
             (Bool(v), _) => is_match_bool_obj(v, got),
             (Int(v), _) => is_match_integer_obj(v, got),
-            (_, _) => Err(format!("Expected {:?}, got {:?}", expected, got)),
+            (_, _) => Err(format!("Expected {:?}, got {:?}", expected, got).into()),
         }
     }
 
     #[test]
-    fn test_eval_bool_expression() {
+    fn test_eval_bool_expression() -> eyre::Result<()> {
         let test_cases = [
             ("true", true),
             ("false", false),
@@ -318,13 +337,14 @@ mod evaluator_tests {
             ("(1 > 2) == false", true),
         ];
         for (input, expected) in test_cases {
-            let got = do_eval(input).unwrap();
-            is_match_bool_obj(&expected, &got).unwrap();
+            let got = do_eval(input)?;
+            is_match_bool_obj(&expected, &got)?;
         }
+        Ok(())
     }
 
     #[test]
-    fn test_bang_operator() {
+    fn test_bang_operator() -> eyre::Result<()> {
         let test_cases = [
             ("!true", false),
             ("!false", true),
@@ -334,13 +354,14 @@ mod evaluator_tests {
             ("!!5", true),
         ];
         for (input, expected) in test_cases {
-            let got = do_eval(input).unwrap();
-            is_match_bool_obj(&expected, &got).unwrap();
+            let got = do_eval(input)?;
+            is_match_bool_obj(&expected, &got)?;
         }
+        Ok(())
     }
 
     #[test]
-    fn test_eval_integer_expression() {
+    fn test_eval_integer_expression() -> eyre::Result<()> {
         let test_cases = [
             ("5", 5),
             ("10", 10),
@@ -360,13 +381,14 @@ mod evaluator_tests {
         ];
 
         for (input, expected) in test_cases {
-            let got = do_eval(input).unwrap();
-            is_match_integer_obj(&expected, &got).unwrap();
+            let got = do_eval(input)?;
+            is_match_integer_obj(&expected, &got)?;
         }
+        Ok(())
     }
 
     #[test]
-    fn test_if_else_expressions() {
+    fn test_if_else_expressions() -> eyre::Result<()> {
         let int_val = |v| Rc::new(Object::Int(v));
         let test_cases = [
             ("if (true) { 10 }", int_val(10)),
@@ -380,14 +402,15 @@ mod evaluator_tests {
 
         for (input, expected) in test_cases {
             let mut env = Environment::new();
-            let program = Parser::parse(input).unwrap();
+            let program = Parser::parse(input)?;
             let got = eval_program(&mut env, program);
-            is_match_obj(&expected, &got).unwrap();
+            is_match_obj(&expected, &got)?;
         }
+        Ok(())
     }
 
     #[test]
-    fn test_return_statements() {
+    fn test_return_statements() -> eyre::Result<()> {
         let test_cases = [
             ("return 10;", 10),
             ("return 10; 9;", 10),
@@ -397,13 +420,14 @@ mod evaluator_tests {
         ];
 
         for (input, expected) in test_cases {
-            let got = do_eval(input).unwrap();
-            is_match_integer_obj(&expected, &got).unwrap();
+            let got = do_eval(input)?;
+            is_match_integer_obj(&expected, &got)?;
         }
+        Ok(())
     }
 
     #[test]
-    fn test_error_handling() {
+    fn test_error_handling() -> eyre::Result<()> {
         let test_cases = [
             ("5 + true;", "type mismatch: INTEGER + BOOLEAN"),
             ("-true", "unknown operator: -BOOLEAN"),
@@ -421,7 +445,7 @@ mod evaluator_tests {
             ("foobar", "identifier not found: foobar"),
         ];
         for (i, (input, expected)) in test_cases.into_iter().enumerate() {
-            let got = do_eval(input).unwrap();
+            let got = do_eval(input)?;
             if let Object::Error(msg) = &*got {
                 assert_eq!(expected, msg)
             } else {
@@ -432,10 +456,11 @@ mod evaluator_tests {
                 )
             }
         }
+        Ok(())
     }
 
     #[test]
-    fn test_let_statements() {
+    fn test_let_statements() -> eyre::Result<()> {
         let test_cases = [
             ("let a = 5; a;", 5),
             ("let a = 5 * 5; a;", 25),
@@ -443,27 +468,29 @@ mod evaluator_tests {
             ("let a = 5; let b = a; let c = a + b + 5; c;", 15),
         ];
         for (input, expected) in test_cases {
-            let got = do_eval(input).unwrap();
-            is_match_integer_obj(&expected, &got).unwrap();
+            let got = do_eval(input)?;
+            is_match_integer_obj(&expected, &got)?;
         }
+        Ok(())
     }
 
     #[test]
-    fn test_function_obj() {
+    fn test_function_obj() -> eyre::Result<()> {
         let input = "fn(x) {x + 2; }";
-        let evaluated = do_eval(input).unwrap();
+        let evaluated = do_eval(input)?;
         match &*evaluated {
             Object::Function(f) => {
                 assert_eq!(1, f.parameters.len());
-                assert_eq!("x", f.parameters[0].value);
+                assert_eq!("x", f.parameters[0]);
                 assert_eq!("(x + 2)", f.body.to_string());
             }
             _ => panic!("Object is not Function. got {:?}", evaluated),
         }
+        Ok(())
     }
 
     #[test]
-    fn test_function_application() {
+    fn test_function_application() -> eyre::Result<()> {
         let test_cases = [
             ("let identity = fn(x) { x; }; identity(5);", 5),
             ("let identity = fn(x) { return x; }; identity(5);", 5),
@@ -473,13 +500,14 @@ mod evaluator_tests {
             ("fn(x) { x; }(5)", 5),
         ];
         for (input, expected) in test_cases {
-            let got = do_eval(input).unwrap();
-            is_match_integer_obj(&expected, &got).unwrap();
+            let got = do_eval(input)?;
+            is_match_integer_obj(&expected, &got)?;
         }
+        Ok(())
     }
 
     #[test]
-    fn test_closures() {
+    fn test_closures() -> eyre::Result<()> {
         let input = r#"
         let new_adder = fn(x) {
             fn(y) { x + y};
@@ -488,8 +516,9 @@ mod evaluator_tests {
         let add_two = new_adder(2);
         add_two(3);
         "#;
-        let got = do_eval(input).unwrap();
+        let got = do_eval(input)?;
         let expected = 5;
-        is_match_integer_obj(&expected, &got).unwrap();
+        is_match_integer_obj(&expected, &got)?;
+        Ok(())
     }
 }
