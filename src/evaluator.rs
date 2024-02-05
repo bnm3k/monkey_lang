@@ -1,16 +1,14 @@
+use std::rc::Rc;
+
 use crate::ast::{self, Expression, Statement};
 use crate::object::{Environment, Function, Object};
 
-const TRUE: Object = Object::Bool(true);
-const FALSE: Object = Object::Bool(false);
-const NULL: Object = Object::Null;
-
-pub fn eval_program(env: &mut Environment, program: ast::Program) -> Object {
-    let mut res = NULL;
+pub fn eval_program(env: &mut Environment, program: ast::Program) -> Rc<Object> {
+    let mut res = Object::null();
     for stmt in &program.statements {
         res = eval_statement(env, stmt);
-        match res {
-            Object::Return(v) => return *v,
+        match unsafe { &*Rc::<Object>::as_ptr(&res) } {
+            Object::Return(v) => return v.clone(),
             Object::Error(_) => return res,
             _ => continue,
         }
@@ -18,11 +16,11 @@ pub fn eval_program(env: &mut Environment, program: ast::Program) -> Object {
     res
 }
 
-fn eval_block_statements(env: &mut Environment, statements: &Vec<Statement>) -> Object {
-    let mut res = NULL;
+fn eval_block_statements(env: &mut Environment, statements: &Vec<Statement>) -> Rc<Object> {
+    let mut res = Object::null();
     for stmt in statements {
         res = eval_statement(env, stmt);
-        match res {
+        match *res {
             Object::Return(_) => return res,
             Object::Error(_) => return res,
             _ => continue,
@@ -31,31 +29,30 @@ fn eval_block_statements(env: &mut Environment, statements: &Vec<Statement>) -> 
     res
 }
 
-fn eval_statement(env: &mut Environment, stmt: &Statement) -> Object {
+fn eval_statement(env: &mut Environment, stmt: &Statement) -> Rc<Object> {
     use Statement::*;
     match stmt {
         LetStmt { name, value, .. } => {
             let result = eval_expression(env, value);
-            env.set(&name.value, result);
-            NULL
+            env.set(&name.value, result)
         }
         ReturnStmt { value, .. } => {
             let result = eval_expression(env, value);
             if result.is_err() {
                 result
             } else {
-                Object::Return(Box::new(result))
+                Rc::new(Object::Return(result))
             }
         }
         ExpressionStmt { value, .. } => eval_expression(env, value),
     }
 }
 
-fn eval_expression(env: &mut Environment, expr: &Expression) -> Object {
+fn eval_expression(env: &mut Environment, expr: &Expression) -> Rc<Object> {
     use Expression::*;
     match expr {
-        IntegerLiteral { value, .. } => Object::Int(*value),
-        Boolean { value, .. } => native_bool_to_bool_obj(*value),
+        IntegerLiteral { value, .. } => Rc::new(Object::Int(*value)),
+        Boolean { value, .. } => Object::bool(*value),
         PrefixExpression {
             operator, right, ..
         } => {
@@ -97,22 +94,19 @@ fn eval_expression(env: &mut Environment, expr: &Expression) -> Object {
                 if let Some(alt) = alternative {
                     eval_block_statements(env, &alt.statements)
                 } else {
-                    NULL
+                    Object::null()
                 }
             }
         }
         Identifier(identifier) => {
             if let Some(obj) = env.get(&identifier.value) {
-                // TODO do something, dont clone, return Rc
-                (*obj).clone()
+                obj
             } else {
-                Object::Error(format!("identifier not found: {}", &identifier.value))
+                to_err_obj(format!("identifier not found: {}", &identifier.value))
             }
         }
         FunctionLiteral {
-            token,
-            parameters,
-            body,
+            parameters, body, ..
         } => {
             // TODO: too much cloning, not a good idea you know
             let function = Function {
@@ -120,24 +114,26 @@ fn eval_expression(env: &mut Environment, expr: &Expression) -> Object {
                 body: body.clone(),
                 env: env.clone(),
             };
-            Object::Function(function)
+            Rc::new(Object::Function(function))
         }
         CallExpression {
             function,
             arguments,
             ..
         } => {
-            let function = eval_expression(env, function);
-            if function.is_err() {
-                return function;
+            let res = eval_expression(env, function);
+            if res.is_err() {
+                return res;
             }
             let mut evaluated_args = eval_expressions(env, arguments);
             if evaluated_args.len() == 1 && evaluated_args[0].is_err() {
                 return evaluated_args.remove(0); // TODO bad idea
             }
-            if let Object::Function(f) = function {
+            let to_ptr = |v| Rc::<Object>::as_ptr(v);
+            // TODO: there should be a better way
+            if let Object::Function(f) = unsafe { &*to_ptr(&res) } {
                 if f.parameters.len() != evaluated_args.len() {
-                    return Object::Error(format!(
+                    return to_err_obj(format!(
                         "Invalid number of arguments for function: expected {}, got {}",
                         f.parameters.len(),
                         evaluated_args.len(),
@@ -149,18 +145,18 @@ fn eval_expression(env: &mut Environment, expr: &Expression) -> Object {
                     .zip(f.parameters.iter().map(|v| v.value.clone()))
                 // TODO: more cloning, bad idea
                 {
-                    extended_env.set(&name, obj)
+                    extended_env.set(&name, obj);
                 }
                 let result = eval_block_statements(&mut extended_env, &f.body.statements);
-                if let Object::Return(v) = result {
-                    *v
-                } else {
-                    result
+                // TODO: is there a better way?
+                match unsafe { &*to_ptr(&result) } {
+                    Object::Return(v) => v.clone(),
+                    _ => result,
                 }
             } else {
-                Object::Error(format!(
+                to_err_obj(format!(
                     "Attempting call on object that is not a function. Got: {:?}",
-                    function
+                    res
                 ))
             }
         }
@@ -168,7 +164,7 @@ fn eval_expression(env: &mut Environment, expr: &Expression) -> Object {
     }
 }
 
-fn eval_expressions(env: &mut Environment, exprs: &Vec<Expression>) -> Vec<Object> {
+fn eval_expressions(env: &mut Environment, exprs: &Vec<Expression>) -> Vec<Rc<Object>> {
     let mut results = Vec::new();
     for expr in exprs {
         let result = eval_expression(env, expr);
@@ -187,32 +183,24 @@ fn is_truthy(obj: &Object) -> bool {
     }
 }
 
-fn native_bool_to_bool_obj(b: bool) -> Object {
-    if b {
-        TRUE
-    } else {
-        FALSE
-    }
-}
-
 fn eval_infix_expression(
-    env: &mut Environment,
+    _env: &mut Environment,
     operator: &str,
     left: &Object,
     right: &Object,
-) -> Object {
+) -> Rc<Object> {
     use Object::*;
     match (left, operator, right) {
         (Int(l), _, Int(r)) => eval_integer_infix_expression(operator, *l, *r),
-        (Bool(l), "==", Bool(r)) => native_bool_to_bool_obj(l == r),
-        (Bool(l), "!=", Bool(r)) => native_bool_to_bool_obj(l != r),
-        (Bool(_), _, Bool(_)) => Object::Error(format!(
+        (Bool(l), "==", Bool(r)) => Object::bool(l == r),
+        (Bool(l), "!=", Bool(r)) => Object::bool(l != r),
+        (Bool(_), _, Bool(_)) => to_err_obj(format!(
             "unknown operator: {} {} {}",
             left.type_as_str(),
             operator,
             right.type_as_str()
         )),
-        (_, _, _) => Object::Error(format!(
+        (_, _, _) => to_err_obj(format!(
             "type mismatch: {} {} {}",
             left.type_as_str(),
             operator,
@@ -221,28 +209,41 @@ fn eval_infix_expression(
     }
 }
 
-fn eval_integer_infix_expression(operator: &str, l: i64, r: i64) -> Object {
-    use Object::Int;
+fn eval_integer_infix_expression(operator: &str, l: i64, r: i64) -> Rc<Object> {
+    let int = |n| Rc::new(Object::Int(n));
     match operator {
-        "+" => Int(l + r),
-        "-" => Int(l - r),
-        "*" => Int(l * r),
-        "/" => Int(l / r),
-        "<" => native_bool_to_bool_obj(l < r),
-        ">" => native_bool_to_bool_obj(l > r),
-        "==" => native_bool_to_bool_obj(l == r),
-        "!=" => native_bool_to_bool_obj(l != r),
-        _ => Object::Error(format!("unknown operator: INTEGER {} INTEGER", operator)),
+        "+" => int(l + r),
+        "-" => int(l - r),
+        "*" => int(l * r),
+        "/" => int(l / r),
+        "<" => Object::bool(l < r),
+        ">" => Object::bool(l > r),
+        "==" => Object::bool(l == r),
+        "!=" => Object::bool(l != r),
+        _ => to_err_obj(format!("unknown operator: INTEGER {} INTEGER", operator)),
     }
 }
 
-fn eval_prefix_expression(env: &mut Environment, operator: &String, right: &Object) -> Object {
+fn to_err_obj(msg: String) -> Rc<Object> {
+    Rc::new(Object::Error(msg))
+}
+
+fn eval_prefix_expression(_env: &mut Environment, operator: &String, right: &Object) -> Rc<Object> {
     if operator == "!" {
-        return eval_bang_operator_expression(env, right);
+        use Object::*;
+        match right {
+            Bool(v) => Object::bool(!v),
+            Null => Object::bool(true),
+            _ => Object::bool(false),
+        }
     } else if operator == "-" {
-        return eval_minus_prefix_operator_expression(env, right);
+        if let Object::Int(v) = right {
+            Rc::new(Object::Int(-v))
+        } else {
+            to_err_obj(format!("unknown operator: -{}", right.type_as_str()))
+        }
     } else {
-        Object::Error(format!(
+        to_err_obj(format!(
             "unknown operator: {}{}",
             operator,
             right.type_as_str()
@@ -250,36 +251,19 @@ fn eval_prefix_expression(env: &mut Environment, operator: &String, right: &Obje
     }
 }
 
-fn eval_minus_prefix_operator_expression(env: &mut Environment, right: &Object) -> Object {
-    if let Object::Int(v) = right {
-        Object::Int(-v)
-    } else {
-        Object::Error(format!("unknown operator: -{}", right.type_as_str()))
-    }
-}
-
-fn eval_bang_operator_expression(env: &mut Environment, right: &Object) -> Object {
-    use Object::*;
-    match right {
-        Bool(v) => native_bool_to_bool_obj(!v),
-        Null => TRUE,
-        _ => FALSE,
-    }
-}
-
 #[cfg(test)]
 mod evaluator_tests {
-    use crate::{lexer::Lexer, object::Object, parser::Parser};
+    use crate::{object::Object, parser::Parser};
 
     use super::*;
 
-    fn do_eval(input: &str) -> Result<Object, Vec<String>> {
+    fn do_eval(input: &str) -> Result<Rc<Object>, Vec<String>> {
         let mut env = Environment::new();
         let program = Parser::parse(input)?;
         return Ok(eval_program(&mut env, program));
     }
 
-    fn is_match_integer_obj(expected: i64, obj: Object) -> Result<(), String> {
+    fn is_match_integer_obj(expected: &i64, obj: &Object) -> Result<(), String> {
         let got = match obj {
             Object::Int(v) => v,
             _ => return Err(format!("Object is not an integer, got: {:?}", obj)),
@@ -290,7 +274,7 @@ mod evaluator_tests {
         Ok(())
     }
 
-    fn is_match_bool_obj(expected: bool, obj: Object) -> Result<(), String> {
+    fn is_match_bool_obj(expected: &bool, obj: &Object) -> Result<(), String> {
         let got = match obj {
             Object::Bool(v) => v,
             _ => return Err(format!("Object is not a bool, got: {:?}", obj)),
@@ -301,12 +285,12 @@ mod evaluator_tests {
         Ok(())
     }
 
-    fn is_match_obj(expected: Object, got: Object) -> Result<(), String> {
+    fn is_match_obj(expected: &Object, got: &Object) -> Result<(), String> {
         use Object::*;
-        match (&expected, &got) {
+        match (expected, &got) {
             (Null, Null) => Ok(()),
-            (Bool(v), _) => is_match_bool_obj(*v, got),
-            (Int(v), _) => is_match_integer_obj(*v, got),
+            (Bool(v), _) => is_match_bool_obj(v, got),
+            (Int(v), _) => is_match_integer_obj(v, got),
             (_, _) => Err(format!("Expected {:?}, got {:?}", expected, got)),
         }
     }
@@ -336,7 +320,7 @@ mod evaluator_tests {
         ];
         for (input, expected) in test_cases {
             let got = do_eval(input).unwrap();
-            is_match_bool_obj(expected, got).unwrap();
+            is_match_bool_obj(&expected, &got).unwrap();
         }
     }
 
@@ -352,7 +336,7 @@ mod evaluator_tests {
         ];
         for (input, expected) in test_cases {
             let got = do_eval(input).unwrap();
-            is_match_bool_obj(expected, got).unwrap();
+            is_match_bool_obj(&expected, &got).unwrap();
         }
     }
 
@@ -378,28 +362,28 @@ mod evaluator_tests {
 
         for (input, expected) in test_cases {
             let got = do_eval(input).unwrap();
-            is_match_integer_obj(expected, got).unwrap();
+            is_match_integer_obj(&expected, &got).unwrap();
         }
     }
 
     #[test]
     fn test_if_else_expressions() {
-        use Object::Int;
+        let int_val = |v| Rc::new(Object::Int(v));
         let test_cases = [
-            ("if (true) { 10 }", Int(10)),
-            ("if (false) { 10 }", NULL),
-            ("if (1) { 10 }", Int(10)),
-            ("if (1 < 2) { 10 }", Int(10)),
-            ("if (1 > 2) { 10 }", NULL),
-            ("if (1 > 2) { 10 } else { 20 }", Int(20)),
-            ("if (1 < 2) { 10 } else { 20 }", Int(10)),
+            ("if (true) { 10 }", int_val(10)),
+            ("if (false) { 10 }", Object::null()),
+            ("if (1) { 10 }", int_val(10)),
+            ("if (1 < 2) { 10 }", int_val(10)),
+            ("if (1 > 2) { 10 }", Object::null()),
+            ("if (1 > 2) { 10 } else { 20 }", int_val(20)),
+            ("if (1 < 2) { 10 } else { 20 }", int_val(10)),
         ];
 
         for (input, expected) in test_cases {
             let mut env = Environment::new();
             let program = Parser::parse(input).unwrap();
             let got = eval_program(&mut env, program);
-            is_match_obj(expected, got).unwrap();
+            is_match_obj(&expected, &got).unwrap();
         }
     }
 
@@ -415,7 +399,7 @@ mod evaluator_tests {
 
         for (input, expected) in test_cases {
             let got = do_eval(input).unwrap();
-            is_match_integer_obj(expected, got).unwrap();
+            is_match_integer_obj(&expected, &got).unwrap();
         }
     }
 
@@ -439,7 +423,7 @@ mod evaluator_tests {
         ];
         for (i, (input, expected)) in test_cases.into_iter().enumerate() {
             let got = do_eval(input).unwrap();
-            if let Object::Error(msg) = got {
+            if let Object::Error(msg) = unsafe { &*Rc::<Object>::as_ptr(&got) } {
                 assert_eq!(expected, msg)
             } else {
                 panic!(
@@ -461,7 +445,7 @@ mod evaluator_tests {
         ];
         for (input, expected) in test_cases {
             let got = do_eval(input).unwrap();
-            is_match_integer_obj(expected, got).unwrap();
+            is_match_integer_obj(&expected, &got).unwrap();
         }
     }
 
@@ -469,7 +453,7 @@ mod evaluator_tests {
     fn test_function_obj() {
         let input = "fn(x) {x + 2; }";
         let evaluated = do_eval(input).unwrap();
-        match evaluated {
+        match unsafe { &*Rc::<Object>::as_ptr(&evaluated) } {
             Object::Function(f) => {
                 assert_eq!(1, f.parameters.len());
                 assert_eq!("x", f.parameters[0].value);
@@ -491,7 +475,7 @@ mod evaluator_tests {
         ];
         for (input, expected) in test_cases {
             let got = do_eval(input).unwrap();
-            is_match_integer_obj(expected, got).unwrap();
+            is_match_integer_obj(&expected, &got).unwrap();
         }
     }
 }
