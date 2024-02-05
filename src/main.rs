@@ -16,10 +16,8 @@ fn main() -> eyre::Result<()> {
                 // parse
                 let program = match Parser::parse(&line) {
                     Ok(program) => program,
-                    Err(errs) => {
-                        for err in errs {
-                            println!("Error: {}", err);
-                        }
+                    Err(e) => {
+                        println!("{}", e);
                         continue 'outer;
                     }
                 };

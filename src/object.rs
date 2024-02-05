@@ -42,7 +42,7 @@ impl Object {
             Bool(v) => v.to_string(),
             Null => "null".to_string(),
             Return(v) => v.inspect(),
-            Error(msg) => format!("ERROR: {}", msg),
+            Error(msg) => format!("Evaluation Error:\n- {}\n", msg),
             Function(f) => f.inspect(),
         }
     }

@@ -42,8 +42,25 @@ fn token_type_precedence(t: &Token) -> Option<Precedence> {
     Some(p)
 }
 
+#[derive(Debug)]
+pub struct ParserError {
+    errors: Vec<String>,
+}
+
+impl std::error::Error for ParserError {}
+
+impl std::fmt::Display for ParserError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Parser Error:\n")?;
+        for e in &self.errors {
+            write!(f, "- {}\n", e)?
+        }
+        Ok(())
+    }
+}
+
 impl Parser {
-    pub fn parse(input: &str) -> Result<ast::Program, Vec<String>> {
+    pub fn parse(input: &str) -> Result<ast::Program, ParserError> {
         // init parser
         let lexer = Lexer::new(input);
         let tokens = lexer.collect::<VecDeque<_>>();
@@ -70,7 +87,9 @@ impl Parser {
         }
         let program = Program { statements };
         if parser.error_msgs.len() > 0 {
-            Err(parser.error_msgs)
+            Err(ParserError {
+                errors: parser.error_msgs,
+            })
         } else {
             Ok(program)
         }
