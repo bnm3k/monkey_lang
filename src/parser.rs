@@ -139,6 +139,7 @@ impl Parser {
             TRUE | FALSE => self.parse_boolean(),
             LPAREN => self.parse_grouped_expression(),
             FUNCTION => self.parse_function_literal(),
+            STRING => self.parse_string_literal(),
             IF => {
                 let res = self.parse_if_expression();
                 res
@@ -380,6 +381,16 @@ impl Parser {
         Some(Expression::IntegerLiteral {
             value,
             token: int_token,
+        })
+    }
+
+    fn parse_string_literal(&mut self) -> Option<Expression> {
+        let str_token = self.tokens.pop_front().unwrap();
+        assert!(str_token.token_type == TokenType::STRING);
+        let value = str_token.literal.clone();
+        Some(Expression::StringLiteral {
+            token: str_token,
+            value,
         })
     }
 
@@ -929,7 +940,7 @@ mod parser_tests {
     }
 
     #[test]
-    fn test_return_statement() {
+    fn test_return_statement() -> eyre::Result<()> {
         use Literal::*;
         let test_cases = [
             ("return 5;", IntVal(5)),
@@ -945,6 +956,7 @@ mod parser_tests {
             };
             is_match_literal_expression(expected_value, &got_value).unwrap();
         }
+        Ok(())
     }
 
     #[test]
@@ -994,5 +1006,23 @@ mod parser_tests {
             }
             _ => panic!("expression should be an IfExpression"),
         };
+    }
+
+    #[test]
+    fn test_string_literal_expression() {
+        let input = r#""hello world""#;
+        let mut program = Parser::parse(input).unwrap();
+        assert!(program.statements.len() == 1);
+        let stmt = program.statements.pop().unwrap();
+        let expr = match stmt {
+            Statement::ExpressionStmt { value, .. } => value,
+            _ => panic!("statement is not an ExpressionStatement"),
+        };
+        match expr {
+            Expression::StringLiteral { value, .. } => {
+                assert_eq!("hello world", value)
+            }
+            _ => panic!("expression should be a StringLiteral"),
+        }
     }
 }

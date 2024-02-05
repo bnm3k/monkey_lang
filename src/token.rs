@@ -9,6 +9,7 @@ pub enum TokenType {
     // identifiers + literals
     IDENT,
     INT,
+    STRING,
 
     // operators
     ASSIGN,

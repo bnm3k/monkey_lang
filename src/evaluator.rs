@@ -56,6 +56,7 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
     use Expression::*;
     match expr {
         IntegerLiteral { value, .. } => Rc::new(Object::Int(*value)),
+        StringLiteral { value, .. } => Rc::new(Object::Str(value.clone())),
         Boolean { value, .. } => Object::bool(*value),
         PrefixExpression {
             operator, right, ..
@@ -193,6 +194,18 @@ fn eval_infix_expression(_env: &Env, operator: &str, left: &Object, right: &Obje
         (Int(l), _, Int(r)) => eval_integer_infix_expression(operator, *l, *r),
         (Bool(l), "==", Bool(r)) => Object::bool(l == r),
         (Bool(l), "!=", Bool(r)) => Object::bool(l != r),
+        (Str(l), "+", Str(r)) => {
+            let mut s = String::with_capacity(l.len() + r.len());
+            s.push_str(l);
+            s.push_str(r);
+            Rc::new(Object::Str(s))
+        }
+        (Str(_), _, Str(_)) => to_err_obj(format!(
+            "unknown operator: {} {} {}",
+            left.type_as_str(),
+            operator,
+            right.type_as_str()
+        )),
         (Bool(_), _, Bool(_)) => to_err_obj(format!(
             "unknown operator: {} {} {}",
             left.type_as_str(),
@@ -284,6 +297,17 @@ mod evaluator_tests {
         let got = match obj {
             Object::Int(v) => v,
             _ => return Err(format!("Object is not an integer, got: {:?}", obj).into()),
+        };
+        if expected != got {
+            return Err(format!("Expected {}, got {}", expected, got).into());
+        }
+        Ok(())
+    }
+
+    fn is_match_str_obj(expected: &str, obj: &Object) -> Result<(), TestError> {
+        let got = match obj {
+            Object::Str(v) => v,
+            _ => return Err(format!("Object is not a str, got: {:?}", obj).into()),
         };
         if expected != got {
             return Err(format!("Expected {}, got {}", expected, got).into());
@@ -442,6 +466,10 @@ mod evaluator_tests {
                 "unknown operator: BOOLEAN + BOOLEAN",
             ),
             ("foobar", "identifier not found: foobar"),
+            (
+                r#" "Hello" - "World" "#,
+                "unknown operator: STRING - STRING",
+            ),
         ];
         for (i, (input, expected)) in test_cases.into_iter().enumerate() {
             let got = do_eval(input)?;
@@ -518,6 +546,24 @@ mod evaluator_tests {
         let got = do_eval(input)?;
         let expected = 5;
         is_match_integer_obj(&expected, &got)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_string_literal() -> eyre::Result<()> {
+        let input = r#" "Hello World!" "#;
+        let got = do_eval(input)?;
+        let expected = "Hello World!";
+        is_match_str_obj(&expected, &got)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_string_concat() -> eyre::Result<()> {
+        let input = r#" "Hello" + " " + "World!" "#;
+        let got = do_eval(input)?;
+        let expected = "Hello World!";
+        is_match_str_obj(&expected, &got)?;
         Ok(())
     }
 }

@@ -9,6 +9,7 @@ pub enum Object {
     Null,
     Int(i64),
     Bool(bool),
+    Str(String),
     Function(Function),
     Return(Rc<Object>),
     Error(String),
@@ -39,6 +40,7 @@ impl Object {
         use Object::*;
         match self {
             Int(v) => v.to_string(),
+            Str(v) => v.clone(),
             Bool(v) => v.to_string(),
             Null => "null".to_string(),
             Return(v) => v.inspect(),
@@ -50,6 +52,7 @@ impl Object {
     pub fn type_as_str(&self) -> &str {
         use Object::*;
         match self {
+            Str(_) => "STRING",
             Int(_) => "INTEGER",
             Bool(_) => "BOOLEAN",
             Null => "NULL",

@@ -61,19 +61,35 @@ impl Lexer {
 
     fn read_number(&mut self) -> String {
         assert!(self.chars[self.i].is_ascii_digit());
-        let mut identifier = String::new();
+        let mut value = String::new();
         let mut j = self.i;
         loop {
             let c = self.chars[j];
             if c.is_ascii_digit() {
-                identifier.push(c);
+                value.push(c);
                 j += 1;
             } else {
                 break;
             }
         }
         self.i = j - 1;
-        return identifier;
+        return value;
+    }
+
+    fn read_string(&mut self) -> String {
+        assert!(self.chars[self.i] == '"');
+        let mut value = String::new();
+        let mut j = self.i + 1;
+        loop {
+            let c = self.chars[j];
+            if c == '"' || c == '0' {
+                break;
+            }
+            value.push(c);
+            j += 1;
+        }
+        self.i = j;
+        return value;
     }
 }
 
@@ -118,6 +134,7 @@ impl Iterator for Lexer {
             ')' => Token::new(RPAREN, curr.into()),
             '{' => Token::new(LBRACE, curr.into()),
             '}' => Token::new(RBRACE, curr.into()),
+            '"' => Token::new(STRING, self.read_string()),
             '\0' => Token::new(EOF, "".into()),
             c @ _ => {
                 let is_letter = |c: char| c.is_alphabetic() || c == '_';
@@ -126,8 +143,7 @@ impl Iterator for Lexer {
                     let token_type = self.lookup_identifier(&literal);
                     Token::new(token_type, literal)
                 } else if c.is_ascii_digit() {
-                    let num_str = self.read_number();
-                    Token::new(INT, num_str)
+                    Token::new(INT, self.read_number())
                 } else {
                     Token::new(ILLEGAL, "".into())
                 }
@@ -218,6 +234,8 @@ mod lexer_tests {
 
             10 == 10;
             10 != 9;
+            "foobar"
+            "foo bar"
         "#;
         let expected = vec![
             (LET, "let"),
@@ -293,6 +311,8 @@ mod lexer_tests {
             (NOT_EQ, "!="),
             (INT, "9"),
             (SEMICOLON, ";"),
+            (STRING, "foobar"),
+            (STRING, "foo bar"),
             (EOF, ""),
         ];
         let lexer = Lexer::new(input);

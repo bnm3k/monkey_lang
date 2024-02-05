@@ -107,6 +107,10 @@ pub enum Expression {
         token: Token,
         value: i64,
     },
+    StringLiteral {
+        token: Token,
+        value: String,
+    },
     Boolean {
         token: Token,
         value: bool,
@@ -153,6 +157,7 @@ impl Node for Expression {
             IfExpression { token, .. } => &token.literal,
             FunctionLiteral { token, .. } => &token.literal,
             CallExpression { token, .. } => &token.literal,
+            StringLiteral { token, .. } => &token.literal,
         }
     }
 }
@@ -164,6 +169,7 @@ impl ToString for Expression {
             Empty => "empty".into(),
             Identifier(i) => i.to_string(),
             IntegerLiteral { token, .. } => token.literal.clone(),
+            StringLiteral { value, .. } => format!("\"{}\"", value),
             Boolean { token, .. } => token.literal.clone(),
             PrefixExpression {
                 operator, right, ..
