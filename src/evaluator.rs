@@ -10,7 +10,7 @@ pub fn eval_program(env: &Env, program: ast::Program) -> Rc<Object> {
     let mut res = Object::null();
     for stmt in &program.statements {
         res = eval_statement(env, stmt);
-        match unsafe { &*Rc::<Object>::as_ptr(&res) } {
+        match &*res {
             Object::Return(v) => return v.clone(),
             Object::Error(_) => return res,
             _ => continue,
@@ -133,9 +133,8 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
             if evaluated_args.len() == 1 && evaluated_args[0].is_err() {
                 return evaluated_args.remove(0); // TODO bad idea
             }
-            let to_ptr = |v| Rc::<Object>::as_ptr(v);
             // TODO: there should be a better way
-            if let Object::Function(f) = unsafe { &*to_ptr(&res) } {
+            if let Object::Function(f) = &*res {
                 if f.parameters.len() != evaluated_args.len() {
                     return to_err_obj(format!(
                         "Invalid number of arguments for function: expected {}, got {}",
@@ -153,7 +152,7 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
                 }
                 let result = eval_block_statements(&mut extended_env, &f.body.statements);
                 // TODO: is there a better way?
-                match unsafe { &*to_ptr(&result) } {
+                match &*result {
                     Object::Return(v) => v.clone(),
                     _ => result,
                 }
@@ -422,7 +421,7 @@ mod evaluator_tests {
         ];
         for (i, (input, expected)) in test_cases.into_iter().enumerate() {
             let got = do_eval(input).unwrap();
-            if let Object::Error(msg) = unsafe { &*Rc::<Object>::as_ptr(&got) } {
+            if let Object::Error(msg) = &*got {
                 assert_eq!(expected, msg)
             } else {
                 panic!(
@@ -452,7 +451,7 @@ mod evaluator_tests {
     fn test_function_obj() {
         let input = "fn(x) {x + 2; }";
         let evaluated = do_eval(input).unwrap();
-        match unsafe { &*Rc::<Object>::as_ptr(&evaluated) } {
+        match &*evaluated {
             Object::Function(f) => {
                 assert_eq!(1, f.parameters.len());
                 assert_eq!("x", f.parameters[0].value);
