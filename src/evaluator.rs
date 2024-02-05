@@ -1,9 +1,12 @@
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::ast::{self, Expression, Statement};
 use crate::object::{Environment, Function, Object};
 
-pub fn eval_program(env: &mut Environment, program: ast::Program) -> Rc<Object> {
+type Env = Rc<RefCell<Environment>>;
+
+pub fn eval_program(env: &Env, program: ast::Program) -> Rc<Object> {
     let mut res = Object::null();
     for stmt in &program.statements {
         res = eval_statement(env, stmt);
@@ -16,7 +19,7 @@ pub fn eval_program(env: &mut Environment, program: ast::Program) -> Rc<Object> 
     res
 }
 
-fn eval_block_statements(env: &mut Environment, statements: &Vec<Statement>) -> Rc<Object> {
+fn eval_block_statements(env: &Env, statements: &Vec<Statement>) -> Rc<Object> {
     let mut res = Object::null();
     for stmt in statements {
         res = eval_statement(env, stmt);
@@ -29,12 +32,13 @@ fn eval_block_statements(env: &mut Environment, statements: &Vec<Statement>) -> 
     res
 }
 
-fn eval_statement(env: &mut Environment, stmt: &Statement) -> Rc<Object> {
+fn eval_statement(env: &Env, stmt: &Statement) -> Rc<Object> {
     use Statement::*;
     match stmt {
         LetStmt { name, value, .. } => {
             let result = eval_expression(env, value);
-            env.set(&name.value, result)
+            Environment::set(env, &name.value, &result);
+            result
         }
         ReturnStmt { value, .. } => {
             let result = eval_expression(env, value);
@@ -48,7 +52,7 @@ fn eval_statement(env: &mut Environment, stmt: &Statement) -> Rc<Object> {
     }
 }
 
-fn eval_expression(env: &mut Environment, expr: &Expression) -> Rc<Object> {
+fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
     use Expression::*;
     match expr {
         IntegerLiteral { value, .. } => Rc::new(Object::Int(*value)),
@@ -99,7 +103,7 @@ fn eval_expression(env: &mut Environment, expr: &Expression) -> Rc<Object> {
             }
         }
         Identifier(identifier) => {
-            if let Some(obj) = env.get(&identifier.value) {
+            if let Some(obj) = Environment::get(env, &identifier.value) {
                 obj
             } else {
                 to_err_obj(format!("identifier not found: {}", &identifier.value))
@@ -139,13 +143,13 @@ fn eval_expression(env: &mut Environment, expr: &Expression) -> Rc<Object> {
                         evaluated_args.len(),
                     ));
                 }
-                let mut extended_env = Environment::new(); // TODO extend env
+                let mut extended_env = Environment::with_outer(&f.env);
                 for (obj, name) in evaluated_args
                     .into_iter()
                     .zip(f.parameters.iter().map(|v| v.value.clone()))
                 // TODO: more cloning, bad idea
                 {
-                    extended_env.set(&name, obj);
+                    Environment::set(&extended_env, &name, &obj);
                 }
                 let result = eval_block_statements(&mut extended_env, &f.body.statements);
                 // TODO: is there a better way?
@@ -164,7 +168,7 @@ fn eval_expression(env: &mut Environment, expr: &Expression) -> Rc<Object> {
     }
 }
 
-fn eval_expressions(env: &mut Environment, exprs: &Vec<Expression>) -> Vec<Rc<Object>> {
+fn eval_expressions(env: &Env, exprs: &Vec<Expression>) -> Vec<Rc<Object>> {
     let mut results = Vec::new();
     for expr in exprs {
         let result = eval_expression(env, expr);
@@ -183,12 +187,7 @@ fn is_truthy(obj: &Object) -> bool {
     }
 }
 
-fn eval_infix_expression(
-    _env: &mut Environment,
-    operator: &str,
-    left: &Object,
-    right: &Object,
-) -> Rc<Object> {
+fn eval_infix_expression(_env: &Env, operator: &str, left: &Object, right: &Object) -> Rc<Object> {
     use Object::*;
     match (left, operator, right) {
         (Int(l), _, Int(r)) => eval_integer_infix_expression(operator, *l, *r),
@@ -228,7 +227,7 @@ fn to_err_obj(msg: String) -> Rc<Object> {
     Rc::new(Object::Error(msg))
 }
 
-fn eval_prefix_expression(_env: &mut Environment, operator: &String, right: &Object) -> Rc<Object> {
+fn eval_prefix_expression(_env: &Env, operator: &String, right: &Object) -> Rc<Object> {
     if operator == "!" {
         use Object::*;
         match right {
@@ -477,5 +476,20 @@ mod evaluator_tests {
             let got = do_eval(input).unwrap();
             is_match_integer_obj(&expected, &got).unwrap();
         }
+    }
+
+    #[test]
+    fn test_closures() {
+        let input = r#"
+        let new_adder = fn(x) {
+            fn(y) { x + y};
+        };
+
+        let add_two = new_adder(2);
+        add_two(3);
+        "#;
+        let got = do_eval(input).unwrap();
+        let expected = 5;
+        is_match_integer_obj(&expected, &got).unwrap();
     }
 }

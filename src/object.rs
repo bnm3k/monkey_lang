@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
@@ -62,7 +63,7 @@ impl Object {
 pub struct Function {
     pub parameters: Vec<Identifier>,
     pub body: BlockStatement,
-    pub env: Environment,
+    pub env: Rc<RefCell<Environment>>,
 }
 
 impl Function {
@@ -89,41 +90,48 @@ impl std::fmt::Debug for Function {
     }
 }
 
-#[derive(Clone)]
 pub struct Environment {
-    outer: Option<Rc<Environment>>,
+    outer: Option<Rc<RefCell<Environment>>>,
     curr: HashMap<String, Rc<Object>>,
 }
 
 impl Environment {
-    pub fn new() -> Self {
-        Environment {
+    pub fn new() -> Rc<RefCell<Environment>> {
+        Rc::new(RefCell::new(Environment {
             outer: None,
             curr: HashMap::new(),
-        }
+        }))
     }
 
-    pub fn with_outer(outer: Rc<Environment>) -> Self {
-        Environment {
-            outer: Some(outer),
+    pub fn with_outer(outer: &Rc<RefCell<Environment>>) -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Environment {
+            outer: Some(Rc::clone(outer)),
             curr: HashMap::new(),
-        }
+        }))
     }
 
-    pub fn get(&self, name: &str) -> Option<Rc<Object>> {
-        if let Some(v) = self.curr.get(name) {
-            Some(Rc::clone(v))
+    fn do_set(&mut self, name: &str, val: &Rc<Object>) {
+        self.curr.insert(name.into(), Rc::clone(&val));
+    }
+
+    fn do_get(&self, name: &str) -> Option<Rc<Object>> {
+        if let Some(val) = self.curr.get(name) {
+            Some(Rc::clone(val))
         } else {
             if let Some(outer) = &self.outer {
-                outer.get(name)
+                outer.borrow().do_get(name)
             } else {
                 None
             }
         }
     }
 
-    pub fn set(&mut self, name: &str, val: Rc<Object>) -> Rc<Object> {
-        self.curr.insert(name.into(), Rc::clone(&val));
-        val
+    pub fn set(env: &RefCell<Environment>, name: &str, val: &Rc<Object>) {
+        let mut inner = env.borrow_mut();
+        inner.do_set(name, val);
+    }
+
+    pub fn get(env: &RefCell<Environment>, name: &str) -> Option<Rc<Object>> {
+        env.borrow().do_get(name)
     }
 }

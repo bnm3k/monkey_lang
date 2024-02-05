@@ -1,4 +1,5 @@
 use std::collections::VecDeque;
+use std::fmt::Debug;
 
 use crate::ast::{BlockStatement, Expression, Identifier, Node, Program, Statement};
 use crate::{
@@ -60,6 +61,9 @@ impl Parser {
             }
             if let Some(statement) = parser.parse_statement() {
                 statements.push(statement)
+            } else {
+                // error occured
+                let _ = parser.tokens.pop_front();
             }
         }
         let program = Program { statements };
@@ -98,11 +102,13 @@ impl Parser {
         if self.peek_token_is(TokenType::SEMICOLON) {
             let _ = self.tokens.pop_front();
         }
+
         Some(stmt)
     }
 
     fn parse_expression(&mut self, precedence: Precedence) -> Option<Expression> {
         let token_type = self.tokens.front().unwrap().token_type;
+
         use TokenType::*;
         // handle prefix
         let mut left_expression: Expression = match token_type {

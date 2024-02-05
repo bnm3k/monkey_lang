@@ -1,5 +1,5 @@
 use monkey::evaluator::eval_program;
-use monkey::object::{Environment, Object};
+use monkey::object::Environment;
 use monkey::parser::Parser;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
