@@ -11,6 +11,7 @@ use crate::object::{Environment, Function, Object};
 lazy_static! {
     static ref BUILTINS: HashMap<String, BuiltinFunction> = {
         let mut m = HashMap::new();
+        m.insert("puts".into(), Builtins::puts());
         m.insert("len".into(), Builtins::len());
         m.insert("first".into(), Builtins::first());
         m.insert("last".into(), Builtins::last());

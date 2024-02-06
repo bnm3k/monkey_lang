@@ -13,6 +13,15 @@ unsafe impl Sync for BuiltinFunction {}
 
 pub struct Builtins {}
 impl Builtins {
+    pub fn puts() -> BuiltinFunction {
+        let puts_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
+            for item in items {
+                println!("{}", item.inspect());
+            }
+            Object::null()
+        };
+        BuiltinFunction(Box::new(puts_fn))
+    }
     pub fn len() -> BuiltinFunction {
         let len_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
             let mut items = items;
@@ -37,7 +46,7 @@ impl Builtins {
     }
 
     pub fn first() -> BuiltinFunction {
-        let len_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
+        let first_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
             let mut items = items;
             if items.len() != 1 {
                 return Rc::new(Object::Error(format!(
@@ -54,11 +63,11 @@ impl Builtins {
                 ))),
             }
         };
-        BuiltinFunction(Box::new(len_fn))
+        BuiltinFunction(Box::new(first_fn))
     }
 
     pub fn last() -> BuiltinFunction {
-        let len_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
+        let last_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
             let mut items = items;
             if items.len() != 1 {
                 return Rc::new(Object::Error(format!(
@@ -78,11 +87,11 @@ impl Builtins {
                 ))),
             }
         };
-        BuiltinFunction(Box::new(len_fn))
+        BuiltinFunction(Box::new(last_fn))
     }
 
     pub fn rest() -> BuiltinFunction {
-        let len_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
+        let rest_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
             let mut items = items;
             if items.len() != 1 {
                 return Rc::new(Object::Error(format!(
@@ -107,11 +116,11 @@ impl Builtins {
                 ))),
             }
         };
-        BuiltinFunction(Box::new(len_fn))
+        BuiltinFunction(Box::new(rest_fn))
     }
 
     pub fn push() -> BuiltinFunction {
-        let len_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
+        let push_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
             let mut items = items;
             if items.len() != 2 {
                 return Rc::new(Object::Error(format!(
@@ -134,6 +143,6 @@ impl Builtins {
                 ))),
             }
         };
-        BuiltinFunction(Box::new(len_fn))
+        BuiltinFunction(Box::new(push_fn))
     }
 }
