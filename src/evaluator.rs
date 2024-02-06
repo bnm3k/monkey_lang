@@ -130,7 +130,7 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
             let parameters = parameters.iter().map(|v| v.clone()).collect::<Vec<_>>();
             let function = Function {
                 parameters,
-                body: body.clone(), // TODO too much cloning?
+                body: body.clone(), // necessary evil
                 env: env.clone(),
             };
             Rc::new(Object::Function(function))
