@@ -38,15 +38,15 @@ impl Builtins {
     }
     pub fn len() -> BuiltinFunction {
         let len_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
-            let mut items = items;
+            let items = items;
             if items.len() != 1 {
                 return Rc::new(Object::Error(format!(
                     "wrong number of arguments. Got {}, want 1",
                     items.len()
                 )));
             }
-            let arg = items.swap_remove(0);
-            Rc::new(match &*arg {
+            let arg: &Object = &items[0];
+            Rc::new(match arg {
                 Object::Str(s) => Object::Int(s.len() as i64),
                 Object::Array(vs) => Object::Int(vs.len() as i64),
                 Object::Hash(map) => Object::Int(map.len() as i64),
@@ -61,14 +61,14 @@ impl Builtins {
 
     pub fn first() -> BuiltinFunction {
         let first_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
-            let mut items = items;
+            let items = items;
             if items.len() != 1 {
                 return Rc::new(Object::Error(format!(
                     "wrong number of arguments. Got {}, want 1",
                     items.len()
                 )));
             }
-            let arg = items.swap_remove(0);
+            let arg: &Object = &items[0];
             match &*arg {
                 Object::Array(vs) => vs.get(0).map(|v| Rc::clone(v)).unwrap_or(Object::null()),
                 _ => Rc::new(Object::Error(format!(
@@ -82,15 +82,15 @@ impl Builtins {
 
     pub fn last() -> BuiltinFunction {
         let last_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
-            let mut items = items;
+            let items = items;
             if items.len() != 1 {
                 return Rc::new(Object::Error(format!(
                     "wrong number of arguments. Got {}, want 1",
                     items.len()
                 )));
             }
-            let arg = items.swap_remove(0);
-            match &*arg {
+            let arg: &Object = &items[0];
+            match arg {
                 Object::Array(vs) => vs
                     .get(vs.len() - 1)
                     .map(|v| Rc::clone(v))
@@ -106,15 +106,15 @@ impl Builtins {
 
     pub fn rest() -> BuiltinFunction {
         let rest_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
-            let mut items = items;
+            let items = items;
             if items.len() != 1 {
                 return Rc::new(Object::Error(format!(
                     "wrong number of arguments. Got {}, want 1",
                     items.len()
                 )));
             }
-            let arg = items.swap_remove(0);
-            match &*arg {
+            let arg: &Object = &items[0];
+            match arg {
                 Object::Array(vs) => {
                     if vs.len() > 0 {
                         Rc::new(Object::Array(
@@ -135,16 +135,16 @@ impl Builtins {
 
     pub fn push() -> BuiltinFunction {
         let push_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
-            let mut items = items;
+            let items = items;
             if items.len() != 2 {
                 return Rc::new(Object::Error(format!(
                     "wrong number of arguments. Got {}, want 1",
                     items.len()
                 )));
             }
-            let arg = items.swap_remove(0);
-            let new_val = items.swap_remove(0);
-            match &*arg {
+            let arg: &Object = &items[0];
+            let new_val: Rc<Object> = Rc::clone(&items[1]);
+            match arg {
                 Object::Array(vs) => {
                     let mut new_vs = Vec::with_capacity(vs.len() + 1);
                     new_vs.extend(vs.iter().map(|v| Rc::clone(v)));
