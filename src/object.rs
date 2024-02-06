@@ -14,7 +14,38 @@ pub enum Object {
     BuiltinFunction(String),
     Return(Rc<Object>),
     Array(Vec<Rc<Object>>),
+    Hash(HashMap<Key, Rc<Object>>),
     Error(String),
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum Key {
+    Str(String),
+    Int(i64),
+    Bool(bool),
+}
+
+impl ToString for Key {
+    fn to_string(&self) -> String {
+        use Key::*;
+        match self {
+            Str(s) => String::from(s),
+            Int(i) => i.to_string(),
+            Bool(b) => b.to_string(),
+        }
+    }
+}
+
+impl std::hash::Hash for Key {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        use Key::*;
+        match self {
+            Str(s) => state.write(s.as_bytes()),
+            Int(i) => state.write_i64(*i),
+            Bool(b) => state.write_u8(*b as u8),
+        };
+        state.finish();
+    }
 }
 
 impl Object {
@@ -60,7 +91,30 @@ impl Object {
                 ];
                 parts.into_iter().collect::<String>()
             }
+            Hash(map) => {
+                let sep = ", ".to_string();
+                let parts = [
+                    "{",
+                    &map.iter()
+                        .map(|(k, v)| format!("{}: {}", k.to_string(), v.inspect()))
+                        .intersperse(sep)
+                        .collect::<String>(),
+                    "}",
+                ];
+                parts.into_iter().collect::<String>()
+            }
         }
+    }
+
+    pub fn as_key(&self) -> Option<Key> {
+        use Object::*;
+        let k = match self {
+            Str(v) => Key::Str(v.clone()),
+            Int(v) => Key::Int(v.clone()),
+            Bool(v) => Key::Bool(v.clone()),
+            _ => return None,
+        };
+        Some(k)
     }
 
     pub fn type_as_str(&self) -> &str {
@@ -72,9 +126,10 @@ impl Object {
             Null => "NULL",
             Return(_) => "RETURN_VALUE",
             Error(_) => "ERROR",
-            Function { .. } => "FUNCTION_OBJ",
+            Function { .. } => "FUNCTION",
             BuiltinFunction(_) => "BUILTIN",
             Array(_) => "ARRAY_OBJ",
+            Hash(_) => "HASH",
         }
     }
 }

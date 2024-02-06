@@ -143,6 +143,7 @@ impl Parser {
             FUNCTION => self.parse_function_literal(),
             STRING => self.parse_string_literal(),
             LBRACKET => self.parse_array_literal(),
+            LBRACE => self.parse_hash_literal(),
             IF => {
                 let res = self.parse_if_expression();
                 res
@@ -229,6 +230,51 @@ impl Parser {
             let _ = self.tokens.pop_front();
         }
         Some(items)
+    }
+
+    fn parse_hash_literal(&mut self) -> Option<Expression> {
+        let lbrace_token = self.tokens.pop_front().unwrap();
+        assert_eq!(TokenType::LBRACE, lbrace_token.token_type);
+        let mut entries = Vec::new();
+        // handle empty list
+        if self.peek_token_is(TokenType::RBRACE) {
+            let _ = self.tokens.pop_front();
+            return Some(Expression::HashLiteral {
+                token: lbrace_token,
+                entries,
+            });
+        }
+
+        // handle rest
+        loop {
+            let key = self.parse_expression(Precedence::Lowest)?;
+            if !self.peek_expect_or_set_err(TokenType::COLON) {
+                return None;
+            }
+            let _ = self.tokens.pop_front(); // pop colon
+            let value = self.parse_expression(Precedence::Lowest)?;
+            entries.push((key, value));
+
+            if self.peek_token_is(TokenType::RBRACE) {
+                let _ = self.tokens.pop_front();
+                break;
+            } else if self.peek_token_is(TokenType::COMMA) {
+                let _ = self.tokens.pop_front();
+            } else {
+                let got = self.tokens.front().unwrap().token_type;
+                self.error_msgs.push(format!(
+                    "expected next token to be {:?} or {:?}, got {:?} instead",
+                    TokenType::COMMA,
+                    TokenType::RBRACE,
+                    got
+                ));
+                return None;
+            }
+        }
+        Some(Expression::HashLiteral {
+            token: lbrace_token,
+            entries,
+        })
     }
 
     fn parse_prefix_expression(&mut self) -> Option<Expression> {
@@ -1102,5 +1148,57 @@ mod parser_tests {
         use Literal::IntVal;
         is_match_literal_expression(Literal::StrVal("my_array"), &left).unwrap();
         is_match_infix_expression(&index, IntVal(1), "+", IntVal(1)).unwrap();
+    }
+
+    #[test]
+    fn test_parsing_hash_literal_string_keys() {
+        let input = r#"{"one":1, "two": 2, "three":3}"#;
+        let mut program = Parser::parse(input).unwrap();
+        assert!(program.statements.len() == 1);
+        let stmt = program.statements.pop().unwrap();
+        let expr = match stmt {
+            Statement::ExpressionStmt { value, .. } => value,
+            _ => panic!("statement is not an ExpressionStatement"),
+        };
+        let entries = match expr {
+            Expression::HashLiteral { entries: e, .. } => e,
+            _ => panic!("expression should be a StringLiteral"),
+        };
+        use Literal::IntVal;
+        let expected = [("one", 1), ("two", 2), ("three", 3)]
+            .iter()
+            .map(|(k, v)| (k, IntVal(*v)))
+            .collect::<Vec<_>>();
+        assert_eq!(expected.len(), entries.len());
+        for (ks, vs) in expected
+            .into_iter()
+            .zip(entries)
+            .map(|((ek, ev), (gk, gv))| ((ek, gk), (ev, gv)))
+        {
+            match ks.1 {
+                Expression::StringLiteral { value, .. } => {
+                    assert_eq!(ks.0, &value)
+                }
+                _ => panic!("Expect string literal"),
+            }
+            is_match_literal_expression(vs.0, &vs.1).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_parsing_empty_hash_literal() {
+        let input = r#"{ }"#;
+        let mut program = Parser::parse(input).unwrap();
+        assert!(program.statements.len() == 1);
+        let stmt = program.statements.pop().unwrap();
+        let expr = match stmt {
+            Statement::ExpressionStmt { value, .. } => value,
+            _ => panic!("statement is not an ExpressionStatement"),
+        };
+        let entries = match expr {
+            Expression::HashLiteral { entries: e, .. } => e,
+            _ => panic!("expression should be a StringLiteral"),
+        };
+        assert_eq!(0, entries.len());
     }
 }

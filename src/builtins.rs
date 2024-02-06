@@ -26,6 +26,7 @@ impl Builtins {
             Rc::new(match &*arg {
                 Object::Str(s) => Object::Int(s.len() as i64),
                 Object::Array(vs) => Object::Int(vs.len() as i64),
+                Object::Hash(map) => Object::Int(map.len() as i64),
                 _ => Object::Error(format!(
                     "argument to `len` not supported, got {}",
                     arg.type_as_str()

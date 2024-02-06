@@ -115,6 +115,10 @@ pub enum Expression {
         token: Token,
         elements: Vec<Expression>,
     },
+    HashLiteral {
+        token: Token,
+        entries: Vec<(Expression, Expression)>,
+    },
     Boolean {
         token: Token,
         value: bool,
@@ -168,6 +172,7 @@ impl Node for Expression {
             CallExpression { token, .. } => &token.literal,
             StringLiteral { token, .. } => &token.literal,
             ArrayLiteral { token, .. } => &token.literal,
+            HashLiteral { token, .. } => &token.literal,
             IndexExpression { token, .. } => &token.literal,
         }
     }
@@ -265,6 +270,18 @@ impl ToString for Expression {
                         .intersperse(String::from(", "))
                         .collect::<String>(),
                     "]",
+                ];
+                parts.into_iter().collect::<String>()
+            }
+            HashLiteral { entries, .. } => {
+                let parts = [
+                    "{",
+                    &entries
+                        .iter()
+                        .map(|(k, v)| k.to_string() + ":" + &v.to_string())
+                        .intersperse(String::from(", "))
+                        .collect::<String>(),
+                    "}",
                 ];
                 parts.into_iter().collect::<String>()
             }

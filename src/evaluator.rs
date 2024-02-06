@@ -149,9 +149,36 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
             }
             Rc::new(Object::Array(evaluated_elems))
         }
+        HashLiteral { entries, .. } => {
+            let mut map = HashMap::new();
+            for (key_expr, val_expr) in entries {
+                let res = eval_expression(env, key_expr);
+                if res.is_err() {
+                    return res;
+                }
+                let key = match res.as_key() {
+                    Some(k) => k,
+                    None => {
+                        return to_err_obj(format!("unusable as hash key: {}", res.type_as_str()))
+                    }
+                };
+                let val = eval_expression(env, val_expr);
+                if val.is_err() {
+                    return val;
+                }
+                map.insert(key, val);
+            }
+            Rc::new(Object::Hash(map))
+        }
         IndexExpression { left, index, .. } => {
             let left = eval_expression(env, left);
+            if left.is_err() {
+                return left;
+            }
             let index = eval_expression(env, index);
+            if index.is_err() {
+                return index;
+            }
             eval_index_expression(env, &left, &index)
         }
         CallExpression {
@@ -222,7 +249,7 @@ fn is_truthy(obj: &Object) -> bool {
     }
 }
 fn eval_index_expression(_env: &Env, left: &Object, index: &Object) -> Rc<Object> {
-    use Object::{Array, Int};
+    use Object::{Array, Hash, Int};
     match (left, index) {
         (Array(vs), Int(n)) => {
             if *n < 0 {
@@ -230,6 +257,17 @@ fn eval_index_expression(_env: &Env, left: &Object, index: &Object) -> Rc<Object
             }
             let index = *n as usize;
             vs.get(index)
+                .map(|v| Rc::clone(v))
+                .unwrap_or(Object::null())
+        }
+        (Hash(map), _) => {
+            let key = match index.as_key() {
+                Some(k) => k,
+                None => {
+                    return to_err_obj(format!("unusable as hash key: {}", index.type_as_str()))
+                }
+            };
+            map.get(&key)
                 .map(|v| Rc::clone(v))
                 .unwrap_or(Object::null())
         }
@@ -319,7 +357,7 @@ fn eval_prefix_expression(_env: &Env, operator: &String, right: &Object) -> Rc<O
 mod evaluator_tests {
 
     use crate::{
-        object::Object,
+        object::{Key, Object},
         parser::{Parser, ParserError},
     };
 
@@ -529,6 +567,10 @@ mod evaluator_tests {
                 r#" "Hello" - "World" "#,
                 "unknown operator: STRING - STRING",
             ),
+            (
+                r#"{"name": "Monkey"}[fn(x) { x }];"#,
+                "unusable as hash key: FUNCTION",
+            ),
         ];
         for (i, (input, expected)) in test_cases.into_iter().enumerate() {
             let got = do_eval(input)?;
@@ -685,6 +727,65 @@ mod evaluator_tests {
             ("[1, 2, 3][3]", Object::Null),
             ("[1, 2, 3][-1]", Object::Null),
         ];
+        for (input, expected) in test_cases {
+            let got = do_eval(input)?;
+            is_match_obj(&expected, &got)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_hash_literals() -> eyre::Result<()> {
+        let input = r#"
+        let two = "two";
+        {
+            "one": 10 - 9,
+            two: 1 + 1,
+            "thr" + "ee": 6 / 2,
+            4: 4,
+            true: 5,
+            false: 6
+        }
+        "#;
+        let mut expected = HashMap::new();
+        expected.insert(Key::Str("one".into()), 1);
+        expected.insert(Key::Str("two".into()), 2);
+        expected.insert(Key::Str("three".into()), 3);
+        expected.insert(Key::Int(4), 4);
+        expected.insert(Key::Bool(true), 5);
+        expected.insert(Key::Bool(false), 6);
+
+        let res = do_eval(input)?;
+        let got = match &*res {
+            Object::Hash(map) => map,
+            _ => panic!("Expected Hash literal"),
+        };
+        assert_eq!(expected.len(), got.len());
+        for (got_key, got_val) in got {
+            // check that key is in expected, use to get value
+            let expected_val = expected
+                .get(got_key)
+                .expect(&format!("key '{}' should be in map", got_key.to_string()));
+
+            // check that value match
+            is_match_integer_obj(expected_val, got_val)?;
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn test_hash_index_expressions() -> eyre::Result<()> {
+        use Object::*;
+        let test_cases = [
+            (r#"{"foo": 5}["foo"]"#, Int(5)),
+            (r#"{"foo": 5}["bar"]"#, Null),
+            (r#"let key = "foo"; {"foo": 5}[key]"#, Int(5)),
+            (r#"{}["foo"]"#, Null),
+            (r#"{5: 5}[5]"#, Int(5)),
+            (r#"{true: 5}[true]"#, Int(5)),
+            (r#"{false: 5}[false]"#, Int(5)),
+        ];
+
         for (input, expected) in test_cases {
             let got = do_eval(input)?;
             is_match_obj(&expected, &got)?;
