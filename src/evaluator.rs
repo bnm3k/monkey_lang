@@ -12,6 +12,7 @@ lazy_static! {
     static ref BUILTINS: HashMap<String, BuiltinFunction> = {
         let mut m = HashMap::new();
         m.insert("puts".into(), Builtins::puts());
+        m.insert("str".into(), Builtins::to_str());
         m.insert("len".into(), Builtins::len());
         m.insert("first".into(), Builtins::first());
         m.insert("last".into(), Builtins::last());

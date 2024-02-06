@@ -22,6 +22,20 @@ impl Builtins {
         };
         BuiltinFunction(Box::new(puts_fn))
     }
+
+    pub fn to_str() -> BuiltinFunction {
+        let puts_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
+            let mut items = items;
+            if items.len() != 1 {
+                return Rc::new(Object::Error(format!(
+                    "wrong number of arguments. Got {}, want 1",
+                    items.len()
+                )));
+            }
+            Rc::new(Object::Str(items[0].inspect()))
+        };
+        BuiltinFunction(Box::new(puts_fn))
+    }
     pub fn len() -> BuiltinFunction {
         let len_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
             let mut items = items;

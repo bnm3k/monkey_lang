@@ -1,33 +1,31 @@
-use monkey::evaluator::eval_program;
-use monkey::object::Environment;
-use monkey::parser::Parser;
+use std::{env, fs};
+
+use monkey::Monkey;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 
 fn main() -> eyre::Result<()> {
+    let mut monkey = Monkey::new();
+    let args: Vec<String> = env::args().collect();
+    if args.len() > 2 {
+        eyre::bail!("Only takes 1 or 0 args (for the file)")
+    }
+    if args.len() == 2 {
+        let file_path = &args[1];
+        let content = fs::read_to_string(file_path)?;
+        monkey.eval(&content);
+        return Ok(());
+    }
+
+    // repl
     println!("Monkey lang");
     let mut rl = DefaultEditor::new()?;
-    let mut env = Environment::new();
-    'outer: loop {
+    loop {
         let readline = rl.readline("> ");
         match readline {
             Ok(line) => {
                 rl.add_history_entry(line.as_str())?;
-                // parse
-                let program = match Parser::parse(&line) {
-                    Ok(program) => program,
-                    Err(e) => {
-                        println!("{}", e);
-                        continue 'outer;
-                    }
-                };
-                // eval
-                let res = eval_program(&mut env, program);
-                println!("{}", res.inspect());
-                // match res {
-                //     Object::Null => continue 'outer,
-                //     v @ _ => println!("{}", v.inspect()),
-                // }
+                monkey.eval(&line);
             }
             Err(ReadlineError::Interrupted) => {
                 break;
