@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::fmt::Debug;
 
-use crate::ast::{BlockStatement, Expression, Identifier, Program, Statement};
+use crate::ast::{BlockStatement, Expression, Program, Statement};
 use crate::{
     ast,
     lexer::Lexer,
@@ -279,7 +279,7 @@ impl Parser {
         Some(Expression::FunctionLiteral { parameters, body })
     }
 
-    fn parse_function_parameters(&mut self) -> Option<Vec<Identifier>> {
+    fn parse_function_parameters(&mut self) -> Option<Vec<String>> {
         // lparen
         if !self.peek_expect_or_set_err(TokenType::LPAREN) {
             return None;
@@ -300,9 +300,7 @@ impl Parser {
                 return None;
             }
             let token = p.tokens.pop_front().unwrap(); // ident token
-            Some(Identifier {
-                value: token.literal,
-            })
+            Some(token.literal)
         };
 
         // handle first arg
@@ -387,10 +385,7 @@ impl Parser {
     fn parse_identifier(&mut self) -> Option<Expression> {
         let token = self.tokens.pop_front().unwrap(); // ident token
         assert!(token.token_type == TokenType::IDENT);
-        let id = Identifier {
-            value: token.literal,
-        };
-        Some(Expression::Identifier(id))
+        Some(Expression::Identifier(token.literal))
     }
 
     fn parse_boolean(&mut self) -> Option<Expression> {
@@ -450,10 +445,7 @@ impl Parser {
             return None;
         }
         let ident_token = self.tokens.pop_front().unwrap();
-        let identifier = Identifier {
-            value: ident_token.literal,
-        };
-
+        let identifier = ident_token.literal;
         // after ident token we should get an assign token
         if !self.peek_expect_or_set_err(TokenType::ASSIGN) {
             return None;
@@ -545,7 +537,7 @@ mod parser_tests {
 
     fn is_match_identifier(expect: &str, expr: &Expression) -> Result<(), &'static str> {
         if let Expression::Identifier(identifier) = expr {
-            if identifier.value != expect {
+            if identifier != expect {
                 return Err("values do not match");
             }
         } else {
@@ -605,7 +597,7 @@ mod parser_tests {
             use Statement::*;
             match stmt {
                 LetStmt { name, .. } => {
-                    assert!(name.value == expected_identifier);
+                    assert!(name == expected_identifier);
                 }
                 _ => panic!("Expect let statement only"),
             }
@@ -640,7 +632,7 @@ mod parser_tests {
         match stmt {
             Statement::ExpressionStmt(value) => {
                 if let Expression::Identifier(v) = value {
-                    assert_eq!("foobar", v.value);
+                    assert_eq!("foobar", v);
                 } else {
                     panic!("Expected expression to be identifier");
                 }
@@ -813,7 +805,7 @@ mod parser_tests {
             } => {
                 use Literal::StrVal;
                 assert!(parameters.len() == 2);
-                let params = parameters.into_iter().map(|v| v.value).collect::<Vec<_>>();
+                let params = parameters.into_iter().map(|v| v).collect::<Vec<_>>();
                 assert_eq!(params, ["x", "y"]);
 
                 assert!(body.statements.len() == 1);
@@ -849,7 +841,7 @@ mod parser_tests {
             // the expression should be an if expession
             match expr {
                 Expression::FunctionLiteral { parameters, .. } => {
-                    let params = parameters.into_iter().map(|v| v.value).collect::<Vec<_>>();
+                    let params = parameters.into_iter().map(|v| v).collect::<Vec<_>>();
                     assert_eq!(expected_params, params);
                 }
                 _ => panic!("expression should be an FunctionLiteral"),
@@ -878,7 +870,7 @@ mod parser_tests {
             } => {
                 match *function {
                     Expression::Identifier(ident) => {
-                        assert_eq!(ident.value, "add");
+                        assert_eq!(ident, "add");
                     }
                     _ => panic!("Expected function in call expression to be identifier"),
                 };
@@ -940,7 +932,7 @@ mod parser_tests {
             let mut program = Parser::parse(input).unwrap();
             assert!(program.statements.len() == 1);
             let (got_identifier, got_value) = match program.statements.pop().unwrap() {
-                Statement::LetStmt { name, value } => (name.value, value),
+                Statement::LetStmt { name, value } => (name, value),
                 _ => panic!("Expected LetStmt"),
             };
             assert_eq!(expected_identifier, got_identifier);

@@ -1,6 +1,6 @@
 #[derive(Clone, Debug)]
 pub enum Statement {
-    LetStmt { name: Identifier, value: Expression },
+    LetStmt { name: String, value: Expression },
     ReturnStmt(Expression),
     ExpressionStmt(Expression),
 }
@@ -60,7 +60,7 @@ pub enum Expression {
     Boolean(bool),
     IntegerLiteral(i64),
     StringLiteral(String),
-    Identifier(Identifier),
+    Identifier(String),
     ArrayLiteral(Vec<Expression>),
     HashLiteral(Vec<(Expression, Expression)>),
     PrefixExpression {
@@ -82,7 +82,7 @@ pub enum Expression {
         alternative: Option<BlockStatement>,
     },
     FunctionLiteral {
-        parameters: Vec<Identifier>, // TODO consider using strings directly
+        parameters: Vec<String>,
         body: BlockStatement,
     },
     CallExpression {
@@ -95,7 +95,7 @@ impl ToString for Expression {
     fn to_string(&self) -> String {
         use Expression::*;
         match self {
-            Identifier(v) => v.to_string(),
+            Identifier(v) => v.clone(),
             IntegerLiteral(v) => v.to_string(),
             StringLiteral(v) => format!("\"{}\"", v),
             Boolean(v) => {
@@ -194,16 +194,5 @@ impl ToString for Expression {
                 parts.into_iter().collect::<String>()
             }
         }
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct Identifier {
-    pub value: String,
-}
-
-impl ToString for Identifier {
-    fn to_string(&self) -> String {
-        self.value.clone()
     }
 }

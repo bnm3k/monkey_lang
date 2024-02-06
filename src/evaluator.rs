@@ -55,7 +55,7 @@ fn eval_statement(env: &Env, stmt: &Statement) -> Rc<Object> {
     match stmt {
         LetStmt { name, value } => {
             let result = eval_expression(env, value);
-            Environment::set(env, &name.value, &result);
+            Environment::set(env, &name, &result);
             result
         }
         ReturnStmt(value) => {
@@ -118,19 +118,16 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
             }
         }
         Identifier(identifier) => {
-            if let Some(obj) = Environment::get(env, &identifier.value) {
+            if let Some(obj) = Environment::get(env, &identifier) {
                 obj
-            } else if BUILTINS.contains_key(&identifier.value) {
-                Rc::new(Object::BuiltinFunction(identifier.value.clone()))
+            } else if BUILTINS.contains_key(identifier) {
+                Rc::new(Object::BuiltinFunction(identifier.clone()))
             } else {
-                to_err_obj(format!("identifier not found: {}", &identifier.value))
+                to_err_obj(format!("identifier not found: {}", &identifier))
             }
         }
         FunctionLiteral { parameters, body } => {
-            let parameters = parameters
-                .iter()
-                .map(|v| v.value.clone())
-                .collect::<Vec<_>>();
+            let parameters = parameters.iter().map(|v| v.clone()).collect::<Vec<_>>();
             let function = Function {
                 parameters,
                 body: body.clone(), // TODO too much cloning?
