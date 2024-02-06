@@ -1,25 +1,12 @@
-use crate::token::{self, Token};
-
 #[derive(Clone, Debug)]
 pub enum Statement {
-    LetStmt {
-        token: Token, // let token
-        name: Identifier,
-        value: Expression,
-    },
-    ReturnStmt {
-        token: Token, // return token
-        value: Expression,
-    },
-    ExpressionStmt {
-        token: Token, // first token of the expression
-        value: Expression,
-    },
+    LetStmt { name: Identifier, value: Expression },
+    ReturnStmt(Expression),
+    ExpressionStmt(Expression),
 }
 
 #[derive(Clone, Debug)]
 pub struct BlockStatement {
-    pub token: Token,
     pub statements: Vec<Statement>,
 }
 
@@ -36,19 +23,19 @@ impl ToString for Statement {
     fn to_string(&self) -> String {
         use Statement::*;
         match self {
-            LetStmt { name, value, .. } => {
+            LetStmt { name, value } => {
                 let mut out = String::from("let ");
                 out.push_str(&name.to_string()); // identifier
                 out.push_str(" = ");
                 out.push_str(&value.to_string());
                 out
             }
-            ReturnStmt { value, .. } => {
+            ReturnStmt(expr) => {
                 let mut out = String::from("return ");
-                out.push_str(&value.to_string());
+                out.push_str(&expr.to_string());
                 out
             }
-            ExpressionStmt { value, .. } => value.to_string(),
+            ExpressionStmt(expr) => expr.to_string(),
         }
     }
 }
@@ -70,56 +57,35 @@ impl ToString for Program {
 
 #[derive(Clone, Debug)]
 pub enum Expression {
+    Boolean(bool),
+    IntegerLiteral(i64),
+    StringLiteral(String),
     Identifier(Identifier),
-    IntegerLiteral {
-        token: Token,
-        value: i64,
-    },
-    StringLiteral {
-        token: Token,
-        value: String,
-    },
-    ArrayLiteral {
-        token: Token,
-        elements: Vec<Expression>,
-    },
-    HashLiteral {
-        token: Token,
-        entries: Vec<(Expression, Expression)>,
-    },
-    Boolean {
-        token: Token,
-        value: bool,
-    },
+    ArrayLiteral(Vec<Expression>),
+    HashLiteral(Vec<(Expression, Expression)>),
     PrefixExpression {
-        token: Token,
         operator: String,
         right: Box<Expression>,
     },
     InfixExpression {
-        token: Token,
         left: Box<Expression>,
         operator: String,
         right: Box<Expression>,
     },
     IndexExpression {
-        token: Token,
         left: Box<Expression>,
         index: Box<Expression>,
     },
     IfExpression {
-        token: Token, // the 'if' token
         condition: Box<Expression>,
         consequence: BlockStatement,
         alternative: Option<BlockStatement>,
     },
     FunctionLiteral {
-        token: Token,
         parameters: Vec<Identifier>, // TODO consider using strings directly
         body: BlockStatement,
     },
     CallExpression {
-        token: Token,
         function: Box<Expression>,
         arguments: Vec<Expression>,
     },
@@ -129,20 +95,20 @@ impl ToString for Expression {
     fn to_string(&self) -> String {
         use Expression::*;
         match self {
-            Identifier(i) => i.to_string(),
-            IntegerLiteral { token, .. } => token.literal.clone(),
-            StringLiteral { value, .. } => format!("\"{}\"", value),
-            Boolean { token, .. } => token.literal.clone(),
-            PrefixExpression {
-                operator, right, ..
-            } => ["(", operator, &right.to_string(), ")"]
+            Identifier(v) => v.to_string(),
+            IntegerLiteral(v) => v.to_string(),
+            StringLiteral(v) => format!("\"{}\"", v),
+            Boolean(v) => {
+                let s = if *v { "true" } else { "false" };
+                s.into()
+            }
+            PrefixExpression { operator, right } => ["(", operator, &right.to_string(), ")"]
                 .into_iter()
                 .collect::<String>(),
             InfixExpression {
                 left,
                 operator,
                 right,
-                ..
             } => {
                 let parts = [
                     "(",
@@ -155,7 +121,7 @@ impl ToString for Expression {
                 ];
                 parts.into_iter().collect::<String>()
             }
-            IndexExpression { left, index, .. } => {
+            IndexExpression { left, index } => {
                 let parts = ["(", &left.to_string(), "[", &index.to_string(), "])"];
                 parts.into_iter().collect::<String>()
             }
@@ -163,7 +129,6 @@ impl ToString for Expression {
                 condition,
                 consequence,
                 alternative,
-                ..
             } => {
                 let mut out = ["if", &condition.to_string(), " ", &consequence.to_string()]
                     .into_iter()
@@ -174,9 +139,7 @@ impl ToString for Expression {
                 }
                 out
             }
-            FunctionLiteral {
-                parameters, body, ..
-            } => {
+            FunctionLiteral { parameters, body } => {
                 let parts = [
                     "fn",
                     "(",
@@ -193,7 +156,6 @@ impl ToString for Expression {
             CallExpression {
                 function,
                 arguments,
-                ..
             } => {
                 let parts = [
                     &function.to_string(),
@@ -207,7 +169,7 @@ impl ToString for Expression {
                 ];
                 parts.into_iter().collect::<String>()
             }
-            ArrayLiteral { elements, .. } => {
+            ArrayLiteral(elements) => {
                 let parts = [
                     "[",
                     &elements
@@ -219,7 +181,7 @@ impl ToString for Expression {
                 ];
                 parts.into_iter().collect::<String>()
             }
-            HashLiteral { entries, .. } => {
+            HashLiteral(entries) => {
                 let parts = [
                     "{",
                     &entries
@@ -237,7 +199,6 @@ impl ToString for Expression {
 
 #[derive(Clone, Debug)]
 pub struct Identifier {
-    pub token: token::Token, // token.IDENT token
     pub value: String,
 }
 

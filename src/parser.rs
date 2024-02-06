@@ -115,17 +115,10 @@ impl Parser {
 
     fn parse_expression_statement(&mut self) -> Option<Statement> {
         let expression = self.parse_expression(Precedence::Lowest)?;
-        // TODO: is this necessary? maybe implement clone on token
-        let token = Token::new(TokenType::IDENT, "TODO REMOVE".into());
-        let stmt = Statement::ExpressionStmt {
-            token, // remove TODO
-            value: expression,
-        };
-
+        let stmt = Statement::ExpressionStmt(expression);
         if self.peek_token_is(TokenType::SEMICOLON) {
             let _ = self.tokens.pop_front();
         }
-
         Some(stmt)
     }
 
@@ -174,39 +167,34 @@ impl Parser {
     }
 
     fn parse_call_expression(&mut self, function: Expression) -> Option<Expression> {
-        let lparen_token = self.tokens.pop_front().unwrap();
-        assert_eq!(TokenType::LPAREN, lparen_token.token_type);
+        let token = self.tokens.pop_front().unwrap();
+        assert_eq!(TokenType::LPAREN, token.token_type);
         let arguments = self.parse_expression_list(TokenType::RPAREN)?;
         Some(Expression::CallExpression {
-            token: lparen_token,
             function: Box::new(function),
             arguments,
         })
     }
 
     fn parse_index_expression(&mut self, left: Expression) -> Option<Expression> {
-        let lbracket_token = self.tokens.pop_front().unwrap();
-        assert_eq!(TokenType::LBRACKET, lbracket_token.token_type);
+        let token = self.tokens.pop_front().unwrap();
+        assert_eq!(TokenType::LBRACKET, token.token_type);
         let index = self.parse_expression(Precedence::Lowest)?;
         if !self.peek_expect_or_set_err(TokenType::RBRACKET) {
             return None;
         }
         let _ = self.tokens.pop_front();
         Some(Expression::IndexExpression {
-            token: lbracket_token,
             left: Box::new(left),
             index: Box::new(index),
         })
     }
 
     fn parse_array_literal(&mut self) -> Option<Expression> {
-        let lbracket_token = self.tokens.pop_front().unwrap();
-        assert_eq!(TokenType::LBRACKET, lbracket_token.token_type);
+        let token = self.tokens.pop_front().unwrap();
+        assert_eq!(TokenType::LBRACKET, token.token_type);
         let elements = self.parse_expression_list(TokenType::RBRACKET)?;
-        Some(Expression::ArrayLiteral {
-            token: lbracket_token,
-            elements,
-        })
+        Some(Expression::ArrayLiteral(elements))
     }
 
     fn parse_expression_list(&mut self, end: TokenType) -> Option<Vec<Expression>> {
@@ -233,16 +221,13 @@ impl Parser {
     }
 
     fn parse_hash_literal(&mut self) -> Option<Expression> {
-        let lbrace_token = self.tokens.pop_front().unwrap();
-        assert_eq!(TokenType::LBRACE, lbrace_token.token_type);
+        let token = self.tokens.pop_front().unwrap();
+        assert_eq!(TokenType::LBRACE, token.token_type);
         let mut entries = Vec::new();
         // handle empty list
         if self.peek_token_is(TokenType::RBRACE) {
             let _ = self.tokens.pop_front();
-            return Some(Expression::HashLiteral {
-                token: lbrace_token,
-                entries,
-            });
+            return Some(Expression::HashLiteral(entries));
         }
 
         // handle rest
@@ -271,36 +256,27 @@ impl Parser {
                 return None;
             }
         }
-        Some(Expression::HashLiteral {
-            token: lbrace_token,
-            entries,
-        })
+        Some(Expression::HashLiteral(entries))
     }
 
     fn parse_prefix_expression(&mut self) -> Option<Expression> {
-        let operator_token = self.tokens.pop_front().unwrap();
-        let tt = operator_token.token_type;
+        let token = self.tokens.pop_front().unwrap();
+        let tt = token.token_type;
         assert!(tt == TokenType::BANG || tt == TokenType::MINUS);
         let right = Box::new(self.parse_expression(Precedence::Prefix)?);
-        let operator = operator_token.literal.clone();
         Some(Expression::PrefixExpression {
-            token: operator_token,
-            operator,
+            operator: token.literal,
             right,
         })
     }
 
     fn parse_function_literal(&mut self) -> Option<Expression> {
         // fn token
-        let fn_token = self.tokens.pop_front().unwrap();
-        assert!(fn_token.token_type == TokenType::FUNCTION);
+        let token = self.tokens.pop_front().unwrap();
+        assert!(token.token_type == TokenType::FUNCTION);
         let parameters = self.parse_function_parameters()?;
         let body = self.parse_block_statement()?;
-        Some(Expression::FunctionLiteral {
-            token: fn_token,
-            parameters,
-            body,
-        })
+        Some(Expression::FunctionLiteral { parameters, body })
     }
 
     fn parse_function_parameters(&mut self) -> Option<Vec<Identifier>> {
@@ -323,11 +299,9 @@ impl Parser {
             if !p.peek_expect_or_set_err(TokenType::IDENT) {
                 return None;
             }
-            let ident_token = p.tokens.pop_front().unwrap();
-            let value = ident_token.literal.clone();
+            let token = p.tokens.pop_front().unwrap(); // ident token
             Some(Identifier {
-                token: ident_token,
-                value,
+                value: token.literal,
             })
         };
 
@@ -381,7 +355,6 @@ impl Parser {
         };
 
         Some(Expression::IfExpression {
-            token: if_token,
             condition: Box::new(condition),
             consequence,
             alternative,
@@ -399,80 +372,64 @@ impl Parser {
     }
 
     fn parse_infix_expression(&mut self, left: Expression) -> Option<Expression> {
-        let operator_token = self.tokens.pop_front().unwrap();
+        let token = self.tokens.pop_front().unwrap(); // operator token
         use TokenType::*;
-        assert!(
-            [PLUS, MINUS, SLASH, ASTERISK, EQ, NOT_EQ, LT, GT].contains(&operator_token.token_type)
-        );
-        let operator = operator_token.literal.clone();
-        let curr_precedence = token_type_precedence(&operator_token).unwrap_or(Precedence::Lowest);
+        assert!([PLUS, MINUS, SLASH, ASTERISK, EQ, NOT_EQ, LT, GT].contains(&token.token_type));
+        let curr_precedence = token_type_precedence(&token).unwrap_or(Precedence::Lowest);
         let right = Box::new(self.parse_expression(curr_precedence).unwrap());
         Some(Expression::InfixExpression {
-            token: operator_token,
             left: Box::new(left),
-            operator,
+            operator: token.literal,
             right,
         })
     }
 
     fn parse_identifier(&mut self) -> Option<Expression> {
-        let ident_token = self.tokens.pop_front().unwrap();
-        assert!(ident_token.token_type == TokenType::IDENT);
-        let value = ident_token.literal.clone();
+        let token = self.tokens.pop_front().unwrap(); // ident token
+        assert!(token.token_type == TokenType::IDENT);
         let id = Identifier {
-            token: ident_token,
-            value,
+            value: token.literal,
         };
         Some(Expression::Identifier(id))
     }
 
     fn parse_boolean(&mut self) -> Option<Expression> {
-        let bool_token = self.tokens.pop_front().unwrap();
-        // assert handled implicitly below
-        let value = match bool_token.token_type {
+        let token = self.tokens.pop_front().unwrap(); // bool token
+                                                      // assert handled implicitly below
+        let value = match token.token_type {
             TokenType::TRUE => true,
             TokenType::FALSE => false,
             _ => panic!("parse_boolean should only be called on a bool token type"),
         };
-        Some(Expression::Boolean {
-            token: bool_token,
-            value,
-        })
+        Some(Expression::Boolean(value))
     }
 
     fn parse_integer_literal(&mut self) -> Option<Expression> {
-        let int_token = self.tokens.pop_front().unwrap();
-        assert!(int_token.token_type == TokenType::INT);
-        let value = match int_token.literal.parse::<i64>() {
+        let token = self.tokens.pop_front().unwrap();
+        assert!(token.token_type == TokenType::INT);
+        let value = match token.literal.parse::<i64>() {
             Ok(v) => v,
             Err(e) => {
                 self.error_msgs.push(format!(
                     "Could not parse {} as integer: {}",
-                    int_token.literal, e
+                    token.literal, e
                 ));
                 return None;
             }
         };
-        Some(Expression::IntegerLiteral {
-            value,
-            token: int_token,
-        })
+        Some(Expression::IntegerLiteral(value))
     }
 
     fn parse_string_literal(&mut self) -> Option<Expression> {
-        let str_token = self.tokens.pop_front().unwrap();
-        assert!(str_token.token_type == TokenType::STRING);
-        let value = str_token.literal.clone();
-        Some(Expression::StringLiteral {
-            token: str_token,
-            value,
-        })
+        let token = self.tokens.pop_front().unwrap();
+        assert!(token.token_type == TokenType::STRING);
+        Some(Expression::StringLiteral(token.literal))
     }
 
     fn parse_return_statement(&mut self) -> Option<Statement> {
         // first token should be return
-        let return_token = self.tokens.pop_front().unwrap();
-        assert!(return_token.token_type == TokenType::RETURN);
+        let token = self.tokens.pop_front().unwrap();
+        assert!(token.token_type == TokenType::RETURN);
 
         let value = self.parse_expression(Precedence::Lowest)?;
 
@@ -480,10 +437,7 @@ impl Parser {
             let _ = self.tokens.pop_front();
         }
 
-        Some(Statement::ReturnStmt {
-            token: return_token,
-            value,
-        })
+        Some(Statement::ReturnStmt(value))
     }
 
     fn parse_let_statement(&mut self) -> Option<Statement> {
@@ -496,10 +450,8 @@ impl Parser {
             return None;
         }
         let ident_token = self.tokens.pop_front().unwrap();
-        let ident_value = ident_token.literal.clone();
         let identifier = Identifier {
-            token: ident_token,
-            value: ident_value,
+            value: ident_token.literal,
         };
 
         // after ident token we should get an assign token
@@ -515,7 +467,6 @@ impl Parser {
         }
 
         Some(Statement::LetStmt {
-            token: let_token,
             name: identifier,
             value,
         })
@@ -525,7 +476,7 @@ impl Parser {
         if !self.peek_expect_or_set_err(TokenType::LBRACE) {
             return None;
         }
-        let lbrace_token = self.tokens.pop_front().unwrap();
+        let _ = self.tokens.pop_front().unwrap(); // lbrace token
 
         let mut statements = Vec::new();
         use TokenType::{EOF, RBRACE};
@@ -544,10 +495,7 @@ impl Parser {
             statements.push(statement);
         }
 
-        Some(BlockStatement {
-            token: lbrace_token,
-            statements,
-        })
+        Some(BlockStatement { statements })
     }
 
     fn peek_token_is(&self, expected: TokenType) -> bool {
@@ -574,7 +522,7 @@ mod parser_tests {
     use crate::ast::Statement;
 
     fn is_match_integer_literal(expect: i64, expr: &Expression) -> Result<(), &'static str> {
-        if let Expression::IntegerLiteral { value: got, .. } = expr {
+        if let Expression::IntegerLiteral(got) = expr {
             if expect != *got {
                 return Err("values do not match");
             }
@@ -585,7 +533,7 @@ mod parser_tests {
     }
 
     fn is_match_bool_literal(expect: bool, expr: &Expression) -> Result<(), &'static str> {
-        if let Expression::Boolean { value: got, .. } = expr {
+        if let Expression::Boolean(got) = expr {
             if expect != *got {
                 return Err("values do not match");
             }
@@ -632,7 +580,6 @@ mod parser_tests {
                 left,
                 operator,
                 right,
-                ..
             } => (left, operator, right),
             _ => panic!("Expect infix expression"),
         };
@@ -691,7 +638,7 @@ mod parser_tests {
         let stmt = program.statements.pop().unwrap();
 
         match stmt {
-            Statement::ExpressionStmt { value, .. } => {
+            Statement::ExpressionStmt(value) => {
                 if let Expression::Identifier(v) = value {
                     assert_eq!("foobar", v.value);
                 } else {
@@ -710,8 +657,8 @@ mod parser_tests {
         let stmt = program.statements.pop().unwrap();
 
         match stmt {
-            Statement::ExpressionStmt { ref value, .. } => {
-                is_match_integer_literal(55, value).unwrap();
+            Statement::ExpressionStmt(value) => {
+                is_match_integer_literal(55, &value).unwrap();
             }
             _ => panic!("Expected expression statement only"),
         }
@@ -726,11 +673,11 @@ mod parser_tests {
             let stmt = program.statements.pop().unwrap();
 
             let expr = match stmt {
-                Statement::ExpressionStmt { value, .. } => value,
+                Statement::ExpressionStmt(v) => v,
                 _ => panic!("Expected expression statement only"),
             };
             match expr {
-                Expression::Boolean { value, .. } => {
+                Expression::Boolean(value) => {
                     assert_eq!(expect, value);
                 }
                 _ => panic!("Expected boolean literal"),
@@ -752,13 +699,11 @@ mod parser_tests {
             assert_eq!(program.statements.len(), 1);
             let stmt = program.statements.pop().unwrap();
             let expression = match stmt {
-                Statement::ExpressionStmt { value, .. } => value,
+                Statement::ExpressionStmt(value) => value,
                 _ => panic!("Expected expression statement only"),
             };
             let (operator, expr) = match expression {
-                Expression::PrefixExpression {
-                    operator, right, ..
-                } => (operator, right),
+                Expression::PrefixExpression { operator, right } => (operator, right),
                 _ => panic!("Expected Prefix Expression"),
             };
             assert_eq!(expected_operator, operator);
@@ -787,7 +732,7 @@ mod parser_tests {
             assert_eq!(program.statements.len(), 1);
             let stmt = program.statements.pop().unwrap();
             let expression = match stmt {
-                Statement::ExpressionStmt { value, .. } => value,
+                Statement::ExpressionStmt(value) => value,
                 _ => panic!("Expected expression statement only"),
             };
             is_match_infix_expression(&expression, left, operator, right).unwrap();
@@ -856,7 +801,7 @@ mod parser_tests {
         // retrieve expression from statement
         let stmt = program.statements.pop().unwrap();
         let expr = match stmt {
-            Statement::ExpressionStmt { value, .. } => value,
+            Statement::ExpressionStmt(value) => value,
             _ => panic!("statement is not an ExpressionStatement"),
         };
 
@@ -865,7 +810,6 @@ mod parser_tests {
             Expression::FunctionLiteral {
                 parameters,
                 mut body,
-                ..
             } => {
                 use Literal::StrVal;
                 assert!(parameters.len() == 2);
@@ -874,8 +818,8 @@ mod parser_tests {
 
                 assert!(body.statements.len() == 1);
                 match body.statements.pop().unwrap() {
-                    Statement::ExpressionStmt { value: expr, .. } => {
-                        is_match_infix_expression(&expr, StrVal("x"), "+", StrVal("y")).unwrap();
+                    Statement::ExpressionStmt(value) => {
+                        is_match_infix_expression(&value, StrVal("x"), "+", StrVal("y")).unwrap();
                     }
                     _ => panic!("Expected statement to be ExpressionStmt"),
                 };
@@ -898,7 +842,7 @@ mod parser_tests {
             // retrieve expression from statement
             let stmt = program.statements.pop().unwrap();
             let expr = match stmt {
-                Statement::ExpressionStmt { value, .. } => value,
+                Statement::ExpressionStmt(value) => value,
                 _ => panic!("statement is not an ExpressionStatement"),
             };
 
@@ -922,7 +866,7 @@ mod parser_tests {
         // retrieve expression from statement
         let stmt = program.statements.pop().unwrap();
         let expr = match stmt {
-            Statement::ExpressionStmt { value, .. } => value,
+            Statement::ExpressionStmt(value) => value,
             _ => panic!("statement is not an ExpressionStatement"),
         };
 
@@ -931,7 +875,6 @@ mod parser_tests {
             Expression::CallExpression {
                 function,
                 arguments,
-                ..
             } => {
                 match *function {
                     Expression::Identifier(ident) => {
@@ -957,7 +900,7 @@ mod parser_tests {
         // retrieve expression from statement
         let stmt = program.statements.pop().unwrap();
         let expr = match stmt {
-            Statement::ExpressionStmt { value, .. } => value,
+            Statement::ExpressionStmt(value) => value,
             _ => panic!("statement is not an ExpressionStatement"),
         };
 
@@ -967,17 +910,14 @@ mod parser_tests {
                 condition,
                 mut consequence,
                 alternative,
-                ..
             } => {
                 use Literal::StrVal;
                 is_match_infix_expression(&condition, StrVal("x"), "<", StrVal("y")).unwrap();
                 assert!(consequence.statements.len() == 1);
 
                 match consequence.statements.pop().unwrap() {
-                    Statement::ExpressionStmt {
-                        value: ref expr, ..
-                    } => {
-                        is_match_identifier("x", expr).unwrap();
+                    Statement::ExpressionStmt(expr) => {
+                        is_match_identifier("x", &expr).unwrap();
                     }
                     _ => panic!("Expected statement to be ExpressionStmt"),
                 };
@@ -1000,7 +940,7 @@ mod parser_tests {
             let mut program = Parser::parse(input).unwrap();
             assert!(program.statements.len() == 1);
             let (got_identifier, got_value) = match program.statements.pop().unwrap() {
-                Statement::LetStmt { name, value, .. } => (name.value, value),
+                Statement::LetStmt { name, value } => (name.value, value),
                 _ => panic!("Expected LetStmt"),
             };
             assert_eq!(expected_identifier, got_identifier);
@@ -1020,7 +960,7 @@ mod parser_tests {
             let mut program = Parser::parse(input).unwrap();
             assert!(program.statements.len() == 1);
             let got_value = match program.statements.pop().unwrap() {
-                Statement::ReturnStmt { value, .. } => value,
+                Statement::ReturnStmt(value) => value,
                 _ => panic!("Expected ReturnStmt"),
             };
             is_match_literal_expression(expected_value, &got_value).unwrap();
@@ -1037,7 +977,7 @@ mod parser_tests {
         // retrieve expression from statement
         let stmt = program.statements.pop().unwrap();
         let expr = match stmt {
-            Statement::ExpressionStmt { value, .. } => value,
+            Statement::ExpressionStmt(value) => value,
             _ => panic!("statement is not an ExpressionStatement"),
         };
 
@@ -1047,7 +987,6 @@ mod parser_tests {
                 condition,
                 mut consequence,
                 alternative,
-                ..
             } => {
                 use Literal::StrVal;
                 // condition
@@ -1057,8 +996,8 @@ mod parser_tests {
                 assert!(consequence.statements.len() == 1);
 
                 match consequence.statements.pop().unwrap() {
-                    Statement::ExpressionStmt { value: expr, .. } => {
-                        is_match_identifier("x", &expr).unwrap();
+                    Statement::ExpressionStmt(value) => {
+                        is_match_identifier("x", &value).unwrap();
                     }
                     _ => panic!("Expected statement to be ExpressionStmt"),
                 };
@@ -1067,8 +1006,8 @@ mod parser_tests {
                 let mut alternative = alternative.unwrap();
                 assert!(alternative.statements.len() == 1);
                 match alternative.statements.pop().unwrap() {
-                    Statement::ExpressionStmt { value: expr, .. } => {
-                        is_match_identifier("y", &expr).unwrap();
+                    Statement::ExpressionStmt(value) => {
+                        is_match_identifier("y", &value).unwrap();
                     }
                     _ => panic!("Expected statement to be ExpressionStmt"),
                 };
@@ -1084,11 +1023,11 @@ mod parser_tests {
         assert!(program.statements.len() == 1);
         let stmt = program.statements.pop().unwrap();
         let expr = match stmt {
-            Statement::ExpressionStmt { value, .. } => value,
+            Statement::ExpressionStmt(value) => value,
             _ => panic!("statement is not an ExpressionStatement"),
         };
         match expr {
-            Expression::StringLiteral { value, .. } => {
+            Expression::StringLiteral(value) => {
                 assert_eq!("hello world", value)
             }
             _ => panic!("expression should be a StringLiteral"),
@@ -1102,11 +1041,11 @@ mod parser_tests {
         assert!(program.statements.len() == 1);
         let stmt = program.statements.pop().unwrap();
         let expr = match stmt {
-            Statement::ExpressionStmt { value, .. } => value,
+            Statement::ExpressionStmt(value) => value,
             _ => panic!("statement is not an ExpressionStatement"),
         };
         let elements = match expr {
-            Expression::ArrayLiteral { elements, .. } => elements,
+            Expression::ArrayLiteral(elements) => elements,
             _ => panic!("expression should be a StringLiteral"),
         };
         is_match_integer_literal(1, &elements[0]).unwrap();
@@ -1122,13 +1061,11 @@ mod parser_tests {
         assert!(program.statements.len() == 1);
         let stmt = program.statements.pop().unwrap();
         let expr = match stmt {
-            Statement::ExpressionStmt { value, .. } => value,
+            Statement::ExpressionStmt(value) => value,
             _ => panic!("statement is not an ExpressionStatement"),
         };
         let (left, index) = match expr {
-            Expression::IndexExpression {
-                left: l, index: i, ..
-            } => (l, i),
+            Expression::IndexExpression { left: l, index: i } => (l, i),
             _ => panic!("expression should be a StringLiteral"),
         };
         use Literal::IntVal;
@@ -1143,11 +1080,11 @@ mod parser_tests {
         assert!(program.statements.len() == 1);
         let stmt = program.statements.pop().unwrap();
         let expr = match stmt {
-            Statement::ExpressionStmt { value, .. } => value,
+            Statement::ExpressionStmt(value) => value,
             _ => panic!("statement is not an ExpressionStatement"),
         };
         let entries = match expr {
-            Expression::HashLiteral { entries: e, .. } => e,
+            Expression::HashLiteral(e) => e,
             _ => panic!("expression should be a StringLiteral"),
         };
         use Literal::IntVal;
@@ -1162,7 +1099,7 @@ mod parser_tests {
             .map(|((ek, ev), (gk, gv))| ((ek, gk), (ev, gv)))
         {
             match ks.1 {
-                Expression::StringLiteral { value, .. } => {
+                Expression::StringLiteral(value) => {
                     assert_eq!(ks.0, &value)
                 }
                 _ => panic!("Expect string literal"),
@@ -1178,11 +1115,11 @@ mod parser_tests {
         assert!(program.statements.len() == 1);
         let stmt = program.statements.pop().unwrap();
         let expr = match stmt {
-            Statement::ExpressionStmt { value, .. } => value,
+            Statement::ExpressionStmt(value) => value,
             _ => panic!("statement is not an ExpressionStatement"),
         };
         let entries = match expr {
-            Expression::HashLiteral { entries: e, .. } => e,
+            Expression::HashLiteral(e) => e,
             _ => panic!("expression should be a StringLiteral"),
         };
         assert_eq!(0, entries.len());

@@ -53,12 +53,12 @@ fn eval_block_statements(env: &Env, statements: &Vec<Statement>) -> Rc<Object> {
 fn eval_statement(env: &Env, stmt: &Statement) -> Rc<Object> {
     use Statement::*;
     match stmt {
-        LetStmt { name, value, .. } => {
+        LetStmt { name, value } => {
             let result = eval_expression(env, value);
             Environment::set(env, &name.value, &result);
             result
         }
-        ReturnStmt { value, .. } => {
+        ReturnStmt(value) => {
             let result = eval_expression(env, value);
             if result.is_err() {
                 result
@@ -66,19 +66,17 @@ fn eval_statement(env: &Env, stmt: &Statement) -> Rc<Object> {
                 Rc::new(Object::Return(result))
             }
         }
-        ExpressionStmt { value, .. } => eval_expression(env, value),
+        ExpressionStmt(value) => eval_expression(env, value),
     }
 }
 
 fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
     use Expression::*;
     match expr {
-        IntegerLiteral { value, .. } => Rc::new(Object::Int(*value)),
-        StringLiteral { value, .. } => Rc::new(Object::Str(value.clone())),
-        Boolean { value, .. } => Object::bool(*value),
-        PrefixExpression {
-            operator, right, ..
-        } => {
+        IntegerLiteral(v) => Rc::new(Object::Int(*v)),
+        StringLiteral(v) => Rc::new(Object::Str(v.clone())),
+        Boolean(v) => Object::bool(*v),
+        PrefixExpression { operator, right } => {
             let right = eval_expression(env, right);
             if right.is_err() {
                 return right;
@@ -89,7 +87,6 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
             left,
             operator,
             right,
-            ..
         } => {
             let left = eval_expression(env, left);
             if left.is_err() {
@@ -105,7 +102,6 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
             condition,
             consequence,
             alternative,
-            ..
         } => {
             let condition = eval_expression(env, condition);
             if condition.is_err() {
@@ -130,9 +126,7 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
                 to_err_obj(format!("identifier not found: {}", &identifier.value))
             }
         }
-        FunctionLiteral {
-            parameters, body, ..
-        } => {
+        FunctionLiteral { parameters, body } => {
             let parameters = parameters
                 .iter()
                 .map(|v| v.value.clone())
@@ -144,14 +138,14 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
             };
             Rc::new(Object::Function(function))
         }
-        ArrayLiteral { elements, .. } => {
+        ArrayLiteral(elements) => {
             let evaluated_elems = eval_expressions(env, elements);
             if evaluated_elems.len() == 1 && evaluated_elems[0].is_err() {
                 return Rc::clone(&evaluated_elems[0]);
             }
             Rc::new(Object::Array(evaluated_elems))
         }
-        HashLiteral { entries, .. } => {
+        HashLiteral(entries) => {
             let mut map = HashMap::new();
             for (key_expr, val_expr) in entries {
                 let res = eval_expression(env, key_expr);
@@ -172,7 +166,7 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
             }
             Rc::new(Object::Hash(map))
         }
-        IndexExpression { left, index, .. } => {
+        IndexExpression { left, index } => {
             let left = eval_expression(env, left);
             if left.is_err() {
                 return left;
@@ -186,7 +180,6 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
         CallExpression {
             function: expr,
             arguments,
-            ..
         } => {
             let res = eval_expression(env, expr);
             if res.is_err() {
