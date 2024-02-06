@@ -228,7 +228,6 @@ fn eval_expression(env: &Env, expr: &Expression) -> Rc<Object> {
                 _ => result,
             }
         }
-        _ => panic!("Should not reach here"),
     }
 }
 

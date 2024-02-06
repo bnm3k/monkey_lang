@@ -1,9 +1,5 @@
 use crate::token::{self, Token};
 
-pub trait Node: ToString {
-    fn token_literal(&self) -> &str;
-}
-
 #[derive(Clone, Debug)]
 pub enum Statement {
     LetStmt {
@@ -27,29 +23,12 @@ pub struct BlockStatement {
     pub statements: Vec<Statement>,
 }
 
-impl Node for BlockStatement {
-    fn token_literal(&self) -> &str {
-        &self.token.literal
-    }
-}
-
 impl ToString for BlockStatement {
     fn to_string(&self) -> String {
         self.statements
             .iter()
             .map(|v| v.to_string())
             .collect::<String>()
-    }
-}
-
-impl Node for Statement {
-    fn token_literal(&self) -> &str {
-        use Statement::*;
-        match self {
-            LetStmt { token, .. } => &token.literal,
-            ReturnStmt { token, .. } => &token.literal,
-            ExpressionStmt { token, .. } => &token.literal,
-        }
     }
 }
 
@@ -78,16 +57,6 @@ pub struct Program {
     pub statements: Vec<Statement>,
 }
 
-impl Node for Program {
-    fn token_literal(&self) -> &str {
-        if self.statements.len() > 0 {
-            self.statements[0].token_literal()
-        } else {
-            ""
-        }
-    }
-}
-
 impl ToString for Program {
     fn to_string(&self) -> String {
         let mut out = String::new();
@@ -101,7 +70,6 @@ impl ToString for Program {
 
 #[derive(Clone, Debug)]
 pub enum Expression {
-    Empty,
     Identifier(Identifier),
     IntegerLiteral {
         token: Token,
@@ -157,32 +125,10 @@ pub enum Expression {
     },
 }
 
-impl Node for Expression {
-    fn token_literal(&self) -> &str {
-        use Expression::*;
-        match self {
-            Empty => "empty",
-            Identifier(i) => i.token_literal(),
-            IntegerLiteral { token, .. } => &token.literal,
-            PrefixExpression { token, .. } => &token.literal,
-            InfixExpression { token, .. } => &token.literal,
-            Boolean { token, .. } => &token.literal,
-            IfExpression { token, .. } => &token.literal,
-            FunctionLiteral { token, .. } => &token.literal,
-            CallExpression { token, .. } => &token.literal,
-            StringLiteral { token, .. } => &token.literal,
-            ArrayLiteral { token, .. } => &token.literal,
-            HashLiteral { token, .. } => &token.literal,
-            IndexExpression { token, .. } => &token.literal,
-        }
-    }
-}
-
 impl ToString for Expression {
     fn to_string(&self) -> String {
         use Expression::*;
         match self {
-            Empty => "empty".into(),
             Identifier(i) => i.to_string(),
             IntegerLiteral { token, .. } => token.literal.clone(),
             StringLiteral { value, .. } => format!("\"{}\"", value),
@@ -293,12 +239,6 @@ impl ToString for Expression {
 pub struct Identifier {
     pub token: token::Token, // token.IDENT token
     pub value: String,
-}
-
-impl Node for Identifier {
-    fn token_literal(&self) -> &str {
-        &self.token.literal
-    }
 }
 
 impl ToString for Identifier {

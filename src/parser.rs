@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::fmt::Debug;
 
-use crate::ast::{BlockStatement, Expression, Identifier, Node, Program, Statement};
+use crate::ast::{BlockStatement, Expression, Identifier, Program, Statement};
 use crate::{
     ast,
     lexer::Lexer,
@@ -116,9 +116,9 @@ impl Parser {
     fn parse_expression_statement(&mut self) -> Option<Statement> {
         let expression = self.parse_expression(Precedence::Lowest)?;
         // TODO: is this necessary? maybe implement clone on token
-        let token_clone = Token::new(TokenType::IDENT, expression.token_literal().into());
+        let token = Token::new(TokenType::IDENT, "TODO REMOVE".into());
         let stmt = Statement::ExpressionStmt {
-            token: token_clone,
+            token, // remove TODO
             value: expression,
         };
 
@@ -578,9 +578,6 @@ mod parser_tests {
             if expect != *got {
                 return Err("values do not match");
             }
-            if got.to_string() != expr.token_literal() {
-                return Err("token literal values do not match");
-            }
         } else {
             return Err("Expected expression to be Integer Literal");
         }
@@ -592,9 +589,6 @@ mod parser_tests {
             if expect != *got {
                 return Err("values do not match");
             }
-            if got.to_string() != expr.token_literal() {
-                return Err("token literal values do not match");
-            }
         } else {
             return Err("Expected expression to be Boolean Literal");
         }
@@ -605,9 +599,6 @@ mod parser_tests {
         if let Expression::Identifier(identifier) = expr {
             if identifier.value != expect {
                 return Err("values do not match");
-            }
-            if identifier.token_literal() != expect {
-                return Err("token literal values do not match");
             }
         } else {
             return Err("Expected expression to be Identifier");
@@ -666,10 +657,8 @@ mod parser_tests {
             let stmt = &program.statements[i];
             use Statement::*;
             match stmt {
-                ls @ LetStmt { name, .. } => {
-                    assert!(ls.token_literal() == "let");
+                LetStmt { name, .. } => {
                     assert!(name.value == expected_identifier);
-                    assert!(name.token_literal() == expected_identifier);
                 }
                 _ => panic!("Expect let statement only"),
             }
@@ -688,9 +677,7 @@ mod parser_tests {
         for stmt in program.statements {
             use Statement::*;
             match stmt {
-                rs @ ReturnStmt { .. } => {
-                    assert!(rs.token_literal() == "return");
-                }
+                ReturnStmt { .. } => {}
                 _ => panic!("Expected return statement only"),
             }
         }
@@ -707,7 +694,6 @@ mod parser_tests {
             Statement::ExpressionStmt { value, .. } => {
                 if let Expression::Identifier(v) = value {
                     assert_eq!("foobar", v.value);
-                    assert_eq!("foobar", v.token_literal());
                 } else {
                     panic!("Expected expression to be identifier");
                 }

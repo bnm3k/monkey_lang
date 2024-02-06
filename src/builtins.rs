@@ -25,7 +25,7 @@ impl Builtins {
 
     pub fn to_str() -> BuiltinFunction {
         let puts_fn = |items: Vec<Rc<Object>>| -> Rc<Object> {
-            let mut items = items;
+            let items = items;
             if items.len() != 1 {
                 return Rc::new(Object::Error(format!(
                     "wrong number of arguments. Got {}, want 1",
