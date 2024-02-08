@@ -70,6 +70,7 @@ impl Parser {
             tokens,
             error_msgs: Vec::new(),
         };
+        parser.tokens = dbg!(parser.tokens);
 
         // do parsing
         let mut statements = Vec::<Statement>::new();
@@ -106,7 +107,7 @@ impl Parser {
 
     fn parse_statement(&mut self) -> Option<Statement> {
         use TokenType::*;
-        match self.tokens.front().unwrap().token_type {
+        match self.tokens.front()?.token_type {
             LET => self.parse_let_statement(),
             RETURN => self.parse_return_statement(),
             _ => self.parse_expression_statement(),
