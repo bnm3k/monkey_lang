@@ -350,8 +350,7 @@ mod lexer_tests {
         ];
         for fuzz_input in fuzz_inputs {
             if let Ok(input) = std::str::from_utf8(&fuzz_input) {
-                let mut tokens = Lexer::new(input).collect::<Vec<_>>();
-                tokens = dbg!(tokens);
+                let tokens = Lexer::new(input).collect::<Vec<_>>();
                 assert_eq!(2, tokens.len());
                 match tokens[1].token_type {
                     TokenType::EOF => {}

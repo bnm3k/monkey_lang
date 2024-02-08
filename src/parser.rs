@@ -70,7 +70,6 @@ impl Parser {
             tokens,
             error_msgs: Vec::new(),
         };
-        parser.tokens = dbg!(parser.tokens);
 
         // do parsing
         let mut statements = Vec::<Statement>::new();
