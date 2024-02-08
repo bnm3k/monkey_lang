@@ -161,7 +161,7 @@ impl Parser {
                 LBRACKET => self.parse_index_expression(left_expression),
                 _ => return Some(left_expression),
             };
-            left_expression = got.unwrap()
+            left_expression = got?;
         }
         Some(left_expression)
     }
@@ -374,7 +374,7 @@ impl Parser {
         use TokenType::*;
         assert!([PLUS, MINUS, SLASH, ASTERISK, EQ, NOT_EQ, LT, GT].contains(&token.token_type));
         let curr_precedence = token_type_precedence(&token).unwrap_or(Precedence::Lowest);
-        let right = Box::new(self.parse_expression(curr_precedence).unwrap());
+        let right = Box::new(self.parse_expression(curr_precedence)?);
         Some(Expression::InfixExpression {
             left: Box::new(left),
             operator: token.literal,
@@ -1118,7 +1118,6 @@ mod parser_tests {
     }
 
     #[test]
-    #[ignore]
     fn test_fixes_fuzz_crashes() {
         let input = [101, 50, 47];
         if let Ok(s) = std::str::from_utf8(&input) {
