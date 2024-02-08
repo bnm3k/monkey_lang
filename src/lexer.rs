@@ -26,12 +26,7 @@ impl Lexer {
     }
 
     fn peek(&self) -> char {
-        let next = self.i + 1;
-        if next >= self.chars.len() {
-            0 as char // NUL as sentinel
-        } else {
-            self.chars[next]
-        }
+        self.chars[self.i + 1]
     }
 
     fn lookup_identifier(&self, s: &str) -> TokenType {
@@ -82,7 +77,7 @@ impl Lexer {
         let mut j = self.i + 1;
         loop {
             let c = self.chars[j];
-            if c == '"' || c == '0' {
+            if c == '"' || c == '\0' {
                 break;
             }
             value.push(c);
