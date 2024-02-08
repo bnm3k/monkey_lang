@@ -71,20 +71,24 @@ impl Lexer {
         return value;
     }
 
-    fn read_string(&mut self) -> String {
+    fn read_string(&mut self) -> Result<String, String> {
         assert!(self.chars[self.i] == '"');
         let mut value = String::new();
         let mut j = self.i + 1;
         loop {
             let c = self.chars[j];
-            if c == '"' || c == '\0' {
+            if c == '"' {
                 break;
+            }
+            if c == '\0' {
+                self.i = j - 1;
+                return Err(value);
             }
             value.push(c);
             j += 1;
         }
         self.i = j;
-        return value;
+        return Ok(value);
     }
 }
 
@@ -131,7 +135,10 @@ impl Iterator for Lexer {
             '}' => Token::new(RBRACE, curr.into()),
             '[' => Token::new(LBRACKET, curr.into()),
             ']' => Token::new(RBRACKET, curr.into()),
-            '"' => Token::new(STRING, self.read_string()),
+            '"' => match self.read_string() {
+                Ok(s) => Token::new(STRING, s),
+                Err(s) => Token::new(ILLEGAL, s),
+            },
             ':' => Token::new(COLON, curr.into()),
             '\0' => Token::new(EOF, "".into()),
             c @ _ => {
@@ -334,5 +341,25 @@ mod lexer_tests {
             tokens_received += 1;
         }
         assert_eq!(tokens_received, expected.len());
+    }
+
+    #[test]
+    fn test_fix_missing_eof() {
+        let fuzz_inputs = [
+            vec![34], // bug #3: this input does not get an EOF, PS it's an unclosed, string char
+        ];
+        for fuzz_input in fuzz_inputs {
+            if let Ok(input) = std::str::from_utf8(&fuzz_input) {
+                let mut tokens = Lexer::new(input).collect::<Vec<_>>();
+                tokens = dbg!(tokens);
+                assert_eq!(2, tokens.len());
+                match tokens[1].token_type {
+                    TokenType::EOF => {}
+                    _ => panic!("invalid token type"),
+                }
+            } else {
+                panic!("invalid input");
+            }
+        }
     }
 }

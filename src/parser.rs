@@ -70,6 +70,7 @@ impl Parser {
             tokens,
             error_msgs: Vec::new(),
         };
+        parser.tokens = dbg!(parser.tokens);
 
         // do parsing
         let mut statements = Vec::<Statement>::new();
@@ -106,7 +107,7 @@ impl Parser {
 
     fn parse_statement(&mut self) -> Option<Statement> {
         use TokenType::*;
-        match self.tokens.front().unwrap().token_type {
+        match self.tokens.front()?.token_type {
             LET => self.parse_let_statement(),
             RETURN => self.parse_return_statement(),
             _ => self.parse_expression_statement(),
@@ -1119,11 +1120,13 @@ mod parser_tests {
 
     #[test]
     fn test_fixes_fuzz_crashes() {
-        let input = [101, 50, 47];
-        if let Ok(s) = std::str::from_utf8(&input) {
-            let _ = Parser::parse(s);
-        } else {
-            panic!("invalid input");
+        let fuzz_inputs = [vec![101, 50, 47], vec![34]];
+        for fuzz_input in fuzz_inputs {
+            if let Ok(input) = std::str::from_utf8(&fuzz_input) {
+                let _ = Parser::parse(input);
+            } else {
+                panic!("invalid input");
+            }
         }
     }
 }
