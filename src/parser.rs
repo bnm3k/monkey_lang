@@ -1116,4 +1116,15 @@ mod parser_tests {
         };
         assert_eq!(0, entries.len());
     }
+
+    #[test]
+    #[ignore]
+    fn test_fixes_fuzz_crashes() {
+        let input = [101, 50, 47];
+        if let Ok(s) = std::str::from_utf8(&input) {
+            let _ = Parser::parse(s);
+        } else {
+            panic!("invalid input");
+        }
+    }
 }
