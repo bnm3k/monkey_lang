@@ -39,3 +39,11 @@ impl Monkey {
         println!("{}", res.inspect());
     }
 }
+
+// for testing (fuzzying)
+pub fn parse_test_input(input: &str) -> Option<()> {
+    match Parser::parse(input) {
+        Ok(_) => Some(()),
+        Err(_) => None,
+    }
+}
