@@ -334,7 +334,7 @@ impl Parser {
         let _ = self.tokens.pop_front();
 
         // condition
-        let condition = self.parse_expression(Precedence::Lowest).unwrap();
+        let condition = self.parse_expression(Precedence::Lowest)?;
 
         // rparen token
         if !self.peek_expect_or_set_err(TokenType::RPAREN) {
@@ -1119,7 +1119,12 @@ mod parser_tests {
 
     #[test]
     fn test_fixes_fuzz_crashes() {
-        let fuzz_inputs = [vec![101, 50, 47], vec![34], vec![45, 45, 95]];
+        let fuzz_inputs = [
+            vec![101, 50, 47],
+            vec![34],
+            vec![45, 45, 95],
+            vec![105, 102, 40, 32],
+        ];
         for fuzz_input in fuzz_inputs {
             if let Ok(input) = std::str::from_utf8(&fuzz_input) {
                 let _ = Parser::parse(input);
