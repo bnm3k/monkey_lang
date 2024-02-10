@@ -1119,7 +1119,7 @@ mod parser_tests {
 
     #[test]
     fn test_fixes_fuzz_crashes() {
-        let fuzz_inputs = [vec![101, 50, 47], vec![34]];
+        let fuzz_inputs = [vec![101, 50, 47], vec![34], vec![45, 45, 95]];
         for fuzz_input in fuzz_inputs {
             if let Ok(input) = std::str::from_utf8(&fuzz_input) {
                 let _ = Parser::parse(input);

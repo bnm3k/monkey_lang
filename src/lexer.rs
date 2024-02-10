@@ -38,7 +38,8 @@ impl Lexer {
     }
 
     fn read_identifier(&mut self) -> String {
-        assert!(self.chars[self.i].is_alphabetic());
+        let c = self.chars[self.i];
+        assert!(c.is_alphabetic() || c == '_');
         let mut identifier = String::new();
         let mut j = self.i;
         loop {
